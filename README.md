@@ -27,7 +27,7 @@ Minimal Claude Code-like local application. Point it at any project directory an
 ## Install
 
 ```bash
-git clone https://github.com/yourusername/micro-cc.git
+git clone https://github.com/GSequist/micro-cc.git
 cd micro-cc
 python -m venv env
 source env/bin/activate
@@ -39,7 +39,9 @@ pip install -r requirements.txt
 Create `.env` in the micro-cc directory:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_KEY=sk-ant-
+OPENAI_API_KEY=sk-proj-
+SERPAPI_KEY=
 ```
 
 ## Usage
