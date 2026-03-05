@@ -111,6 +111,10 @@ async def start_():
         endp_resp = "LiteLLM"
     console.print(f"  Endpoint: {endp_resp}")
 
+    # Set endpoint for browser/md_convert (module-level, avoids threading through class hierarchy)
+    from browser._md_convert import set_endpoint
+    set_endpoint(endp_resp)
+
     if not project_dir:
         console.print(Markdown("Error: project directory required"))
         return

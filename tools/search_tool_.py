@@ -16,10 +16,19 @@ from tools.web_tools_ import (
 )
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
-client = AsyncOpenAI(timeout=300)
+_openai_client = AsyncOpenAI(timeout=300)
+_litellm_client = AsyncOpenAI(
+    base_url=os.getenv("LITELLM_BASE_URL"),
+    api_key=os.getenv("LITELLM_API_KEY"),
+    timeout=300,
+)
+
+def _get_embed_client(end_resp: str) -> AsyncOpenAI:
+    return _litellm_client if end_resp == "LiteLLM" else _openai_client
 
 # tool_name -> {func, schema, search_text, embedding (lazily computed)}
 TOOL_CATALOG = {}
@@ -89,11 +98,13 @@ MCP_CATALOG = {
 }
 
 
-async def _ensure_embeddings():
+async def _ensure_embeddings(end_resp: str = "Anthropic"):
     """Lazily compute tool embeddings on first search"""
     global _embeddings_computed
     if _embeddings_computed:
         return
+
+    client = _get_embed_client(end_resp)
 
     # Batch embed all search texts (tools + MCPs)
     tool_names = list(TOOL_CATALOG.keys())
@@ -125,6 +136,7 @@ async def search_tools(
     query: str,
     *,
     project_dir: str = "",
+    end_resp: str = "Anthropic",
 ):
     """Search for tools by describing what you need to accomplish.
 
@@ -132,8 +144,10 @@ async def search_tools(
         query: Natural language description of the capability you need.
             Examples: "search clinical trials", "analyze image", "run Python code"
     """
+    client = _get_embed_client(end_resp)
+
     # Ensure tool embeddings are computed (only once)
-    await _ensure_embeddings()
+    await _ensure_embeddings(end_resp)
 
     # Embed the query
     query_resp = await client.embeddings.create(

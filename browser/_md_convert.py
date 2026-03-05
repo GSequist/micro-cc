@@ -3,6 +3,7 @@ from youtube_transcript_api.formatters import SRTFormatter
 from youtube_transcript_api import YouTubeTranscriptApi
 from typing import Any, Dict, List, Optional, Union
 from models.anthropic import a_model_call
+from models.litellm import l_model_call
 from bs4 import BeautifulSoup
 import pdfminer.high_level
 import pandas as pd
@@ -24,6 +25,15 @@ import json
 import pptx
 import os
 import re
+
+
+# Module-level endpoint routing (set once at startup via set_endpoint)
+_model_endpoint = "Anthropic"
+
+
+def set_endpoint(endpoint: str):
+    global _model_endpoint
+    _model_endpoint = endpoint
 
 
 class _CustomMarkdownify(markdownify.MarkdownConverter):
@@ -631,7 +641,10 @@ class ImageConverter(MediaConverter):
             image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
             data_uri = f"data:{content_type};base64,{image_base64}"
 
-        response = asyncio.run(a_model_call(input=prompt, encoded_image=data_uri))
+        if _model_endpoint == "LiteLLM":
+            response = asyncio.run(l_model_call(input=prompt, encoded_image=data_uri))
+        else:
+            response = asyncio.run(a_model_call(input=prompt, encoded_image=data_uri))
         return response.content[0].text
 
 
