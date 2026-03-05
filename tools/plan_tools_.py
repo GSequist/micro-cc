@@ -2,7 +2,7 @@ import json
 import time
 from cache.redis_cache import RedisStateManager
 
-def make_plan(content: str, *, project_path: str) -> str:
+def make_plan(content: str, *, project_dir: str) -> str:
     """Create a new plan with task IDs and initial status.
 
     Use when user asks something fundamentally different from the existing plan.
@@ -39,9 +39,9 @@ def make_plan(content: str, *, project_path: str) -> str:
             "created_at": time.time(),
         }
 
-        prev_plan = redis_state.get_plan(project_path)
+        prev_plan = redis_state.get_plan(project_dir)
         new_content = json.dumps(structured_plan)
-        redis_state.set_plan(project_path, new_content)
+        redis_state.set_plan(project_dir, new_content)
 
         formatted_plan = format_structured_plan(structured_plan)
 
@@ -63,7 +63,7 @@ def update_step(
     status: Literal["not_started", "in_progress", "completed", "blocked"] = None,
     findings: str = None,
     *,
-    project_path,
+    project_dir,
 ) -> str:
     """Update specific step status and findings after completing work.
 
@@ -76,7 +76,7 @@ def update_step(
     """
     redis_state = RedisStateManager()
 
-    plan_data = redis_state.get_plan(project_path)
+    plan_data = redis_state.get_plan(project_dir)
     if not plan_data:
         return "Error: No plan exists. Create a plan first."
 
@@ -113,7 +113,7 @@ def update_step(
             plan["step_findings"][step_index] = findings
 
         updated_plan = json.dumps(plan)
-        redis_state.set_plan(project_path, updated_plan)
+        redis_state.set_plan(project_dir, updated_plan)
 
         return f"Step {step_index} updated successfully. The plan is saved. Continue with your next action based on the plan's focus."
 
@@ -121,7 +121,7 @@ def update_step(
         return "Error: Invalid plan format"
 
 
-def add_step(step_description: str, *, project_path) -> str:
+def add_step(step_description: str, *, project_dir) -> str:
     """Add a new step to the end of the existing plan.
 
     Use when research reveals additional sources or tasks needed.
@@ -132,7 +132,7 @@ def add_step(step_description: str, *, project_path) -> str:
     """
     redis_state = RedisStateManager()
 
-    plan_data = redis_state.get_plan(project_path)
+    plan_data = redis_state.get_plan(project_dir)
     if not plan_data:
         return "Error: No plan exists. Create a plan first."
 
@@ -150,7 +150,7 @@ def add_step(step_description: str, *, project_path) -> str:
         # No need to adjust current_step_index since we're appending to end
 
         updated_plan = json.dumps(plan)
-        redis_state.set_plan(project_path, updated_plan)
+        redis_state.set_plan(project_dir, updated_plan)
 
         # Show progress update
         total_steps = len(plan["steps"])
@@ -162,7 +162,7 @@ def add_step(step_description: str, *, project_path) -> str:
         return "Error: Invalid plan format"
 
 
-def advance_to_step(step_index: int, *, user_id: str, conversation_id: int) -> str:
+def advance_to_step(step_index: int, *, project_dir: str) -> str:
     """Move focus to a specific step and mark it as in_progress.
 
     Args:
@@ -170,7 +170,7 @@ def advance_to_step(step_index: int, *, user_id: str, conversation_id: int) -> s
     """
     redis_state = RedisStateManager()
 
-    plan_data = redis_state.get_plan(user_id, conversation_id)
+    plan_data = redis_state.get_plan(project_dir)
     if not plan_data:
         return "Error: No plan exists. Create a plan first."
 
@@ -190,7 +190,7 @@ def advance_to_step(step_index: int, *, user_id: str, conversation_id: int) -> s
         plan["step_statuses"][step_index] = "in_progress"
 
         updated_plan = json.dumps(plan)
-        redis_state.set_plan(user_id, conversation_id, updated_plan)
+        redis_state.set_plan(project_dir, updated_plan)
 
         return f"Advanced to step {step_index}. The plan is saved. Continue with your next action based on the plan's focus."
 
@@ -286,11 +286,11 @@ def get_contextual_plan_reminder(plan: dict) -> str:
     return reminder
 
 
-def show_full_plan(*, user_id: str, conversation_id: int) -> str:
+def show_full_plan(*, project_dir: str) -> str:
     """Show the complete plan with all steps and findings so far. Use this before creating final reports or deliverables to ensure you have full context."""
     redis_state = RedisStateManager()
 
-    plan_data = redis_state.get_plan(user_id, conversation_id)
+    plan_data = redis_state.get_plan(project_dir)
     if not plan_data:
         return "No plan exists"
 

@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 from claude_loop_ import claude_loop
 from prompt_toolkit import PromptSession
@@ -9,8 +10,8 @@ from rich.markdown import Markdown
 from utils.file_watcher_ import FileWatcher
 
 
-async def consumeloop(query, project_dir, console, watcher: FileWatcher):
-    async for event in claude_loop(query=query, project_dir=project_dir, watcher=watcher):
+async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatcher):
+    async for event in claude_loop(query=query, project_dir=project_dir, end_resp=end_resp, watcher=watcher):
         etype = event.get("type")
 
         if etype == "status":
@@ -53,6 +54,7 @@ async def consumeloop(query, project_dir, console, watcher: FileWatcher):
             name = event.get("name", "?")
             output = event.get("output", "")[:2000]
             console.print(Markdown(f"  ✓ `{name}`: {output}..."))
+            console.print("  ─────────────────────────────────────")
 
         elif etype == "final_text":
             # Final response - print full
@@ -63,8 +65,6 @@ async def consumeloop(query, project_dir, console, watcher: FileWatcher):
 
         elif etype == "done":
             pass  # Ready for next input
-
-
 
 
 async def start_():
@@ -94,12 +94,22 @@ async def start_():
     console.print("│                                        │")
     console.print("╰────────────────────────────────────────╯\n")
 
-    # Get project dir from arg or prompt
+    # Get project dir from arg or default to cwd
     if len(sys.argv) > 1:
         project_dir = sys.argv[1]
     else:
-        dir_session = PromptSession(completer=PathCompleter(only_directories=True, expanduser=True))
-        project_dir = (await dir_session.prompt_async("project directory: ")).strip()
+        project_dir = os.getcwd()
+
+    # Get model choice
+
+    endpoint = PromptSession()
+    endp_resp = (await endpoint.prompt_async("  Endpoint (LiteLLM (l) | Anthropic (a)): ")).strip().lower()
+
+    if endp_resp in ("", "a"):
+        endp_resp = "Anthropic"
+    else:
+        endp_resp = "LiteLLM"
+    console.print(f"  Endpoint: {endp_resp}")
 
     if not project_dir:
         console.print(Markdown("Error: project directory required"))
@@ -107,10 +117,12 @@ async def start_():
 
     console.print(Markdown(f"→ {project_dir}\n"))
 
-    # Start file watcher
+    # Start file watcher + process tracker
     watcher = FileWatcher(project_dir)
     watcher.start()
-    console.print("  👁 watching for file changes\n")
+    from utils.process_tracker import init as init_process_tracker
+    init_process_tracker()
+    console.print("  👾 watching for file changes\n")
 
     # Main loop
     while True:
@@ -131,7 +143,7 @@ async def start_():
                 continue
 
             try:
-                await consumeloop(query, project_dir, console, watcher)
+                await consumeloop(query, project_dir, endp_resp, console, watcher)
             except asyncio.CancelledError:
                 console.print("\n[interrupted]")
 

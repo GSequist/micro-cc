@@ -9,7 +9,8 @@ from dotenv import load_dotenv
 from cache.redis_cache import RedisStateManager
 from execute_tool import execute_tool_call
 from models.schema import function_to_schema
-from models.anthropic import model_call
+from models.anthropic import a_model_call
+from models.litellm import l_model_call
 from skills.skill_loader import get_skill_summary
 from tools.bash_tool import bash_
 from tools.file_tools_ import read_, write_, edit_, glob_, grep_
@@ -37,6 +38,7 @@ async def claude_loop(
     query,
     *,
     project_dir,
+    end_resp,
     watcher=None
 ):
     """micro cc"""
@@ -86,6 +88,7 @@ async def claude_loop(
 
     # If this is the first message, initialize with system prompt
     if not msgs:
+
         claude_md_section = f"\n\n<project-instructions>\n{claude_md_content}\n</project-instructions>" if claude_md_content else ""
 
         msgs = [
@@ -145,6 +148,12 @@ make_plan, update_step, show_full_plan, add_step
             if file_changes:
                 reminders.append(f"Files changed since last turn:\n{file_changes}")
 
+        # Inject background process status
+        from utils.process_tracker import format_status as process_status
+        proc_info = process_status()
+        if proc_info:
+            reminders.append(proc_info)
+
         plan_data = redis_state.get_plan(project_dir)
         if plan_data:
             plan = json.loads(plan_data)
@@ -154,7 +163,7 @@ make_plan, update_step, show_full_plan, add_step
         # Inject reminder into messages for this call (only if we have any)
         if reminders:
             reminder_msg = {
-                "role": "system",
+                "role": "user",
                 "content": f"<system-reminder>\n" + "\n\n".join(reminders) + "\n</system-reminder>"
             }
             trimmed_loop_msgs = token_cutter(msgs + [reminder_msg], tokenizer, max_tokens)
@@ -162,13 +171,26 @@ make_plan, update_step, show_full_plan, add_step
             trimmed_loop_msgs = token_cutter(msgs, tokenizer, max_tokens)
 
         try:
-            response = await model_call(
-                input=trimmed_loop_msgs,
-                model="claude-4.5",
-                tools=tool_schemas,
-                thinking=True,
-                stream=False,
-            )
+            if end_resp == "LiteLLM":
+                response = await l_model_call(
+                    input=trimmed_loop_msgs,
+                    model="bedrock.anthropic.claude-opus-4-6",
+                    tools=tool_schemas,
+                    thinking=True,
+                    stream=False,
+                )
+            else:
+                response = await a_model_call(
+                    input=trimmed_loop_msgs,
+                    model="claude-4.6",
+                    tools=tool_schemas,
+                    thinking=True,
+                    stream=False,
+                )
+
+            if response is None:
+                yield {"type": "error", "message": "Model call failed after retries"}
+                break
 
             thinking_block = next(
                 (block for block in response.content if block.type == "thinking"), None

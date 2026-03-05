@@ -14,13 +14,24 @@ def token_cutter(messages: list[dict], tokenizer, max_tokens: int) -> list[dict]
     """
 
     # Phase 1: Classify and prioritize
-    critical = {"user": [], "assistant": [], "results": [], "reminder": []}
+    critical = {
+        "system": [],
+        "user": [],
+        "assistant": [],
+        "results": [],
+        "reminder": [],
+    }
     other = []
     tool_use_map = {}  # Map tool_use_id -> assistant message with tool_use
 
     for msg in reversed(messages):  # Most recent first
         role = msg.get("role")
         content = msg.get("content", "")
+
+        # System messages (skill, customer context) — always keep
+        if role == "system":
+            critical["system"].append(msg)
+            continue  # Without continue, a system message would skip all the if role == "user" / if role == "assistant" conditions but still hit the final else: other.append(msg) at line 83. Then it'd be in both critical["system"] and other — duplicated, and worse, subject to trimming.
 
         # Handle assistant messages with tool_use (may include thinking)
         if role == "assistant" and isinstance(content, list):
@@ -115,11 +126,24 @@ def token_cutter(messages: list[dict], tokenizer, max_tokens: int) -> list[dict]
             kept_msgs.append(msg)
             seen_content.add(key)
             budget -= tokens
+
         elif budget > 0:
-            # print(f"proceeding still to add trimmed tool results bc budget is posiive")
-            # Check if this is a user message with tool_result that's too large
             content = msg.get("content")
-            if msg.get("role") == "user" and isinstance(content, list):
+
+            # Truncate plain string user/assistant messages
+            if isinstance(content, str) and len(content) > 1000:
+                chars_to_keep = max(budget * 4, 100)
+                msg["content"] = (
+                    content[:chars_to_keep] + "\n\n[... output truncated ...]"
+                )
+                actual_tokens = count_tokens(msg)
+                if actual_tokens <= budget:
+                    kept_msgs.append(msg)
+                    seen_content.add(key)
+                    budget -= actual_tokens
+
+            # Trim oversized tool_result content
+            elif msg.get("role") == "user" and isinstance(content, list):
                 # Check if contains tool_result
                 has_tool_result = any(
                     isinstance(b, dict) and b.get("type") == "tool_result"
@@ -144,6 +168,41 @@ def token_cutter(messages: list[dict], tokenizer, max_tokens: int) -> list[dict]
                                     result_content[:chars_to_keep]
                                     + "\n\n[... output truncated ...]"
                                 )
+
+                            # List content (document blocks for citations)
+                            elif isinstance(result_content, list):
+                                total_chars = sum(
+                                    len(d.get("source", {}).get("data", ""))
+                                    for d in result_content
+                                    if isinstance(d, dict)
+                                    and d.get("type") == "document"
+                                )
+                                if total_chars > chars_to_keep:
+                                    # Truncate each document's data proportionally
+                                    doc_count = len(
+                                        [
+                                            d
+                                            for d in result_content
+                                            if isinstance(d, dict)
+                                            and d.get("type") == "document"
+                                        ]
+                                    )
+                                    per_doc_limit = max(
+                                        chars_to_keep // max(doc_count, 1), 100
+                                    )
+
+                                    for doc in result_content:
+                                        if (
+                                            isinstance(doc, dict)
+                                            and doc.get("type") == "document"
+                                        ):
+                                            source = doc.get("source", {})
+                                            data = source.get("data", "")
+                                            if len(data) > per_doc_limit:
+                                                source["data"] = (
+                                                    data[:per_doc_limit]
+                                                    + "\n\n[... document truncated ...]"
+                                                )
 
                     # Count tokens after trimming
                     actual_tokens = count_tokens(msg)
@@ -249,105 +308,9 @@ def test_token_cutter():
 
     # python -m utils.tokenization
 
-    # Create a realistic conversation loop
-    test_messages = [
-        {"role": "user", "content": "Help me analyze these contracts"},
-        {
-            "role": "assistant",
-            "content": f"I'll help you analyze the contracts. Let me start by creating a plan. {'X' * 20000}",
-        },
-        # Tool call + result
-        {
-            "role": "assistant",
-            "content": [
-                {
-                    "type": "thinking",
-                    "thinking": f"I will first make some notes {'X' * 20000}",
-                }
-            ]
-            + [
-                {
-                    "type": "tool_use",
-                    "id": "call_1",
-                    "name": "write_to_journal",
-                    "input": {},  # dict, not string
-                }
-            ],
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "call_1",
-                    "content": "Journal several steps steps",
-                }
-            ],
-        },
-        {
-            "role": "user",
-            "content": f"<memory-reminder>Here are your current journal entries: {'X' * 20000}</memory-reminder>",
-        },
-        # Tool call + result
-        {
-            "role": "assistant",
-            "content": [
-                {
-                    "type": "thinking",
-                    "thinking": f"This was not all user asked me to do do I will first invoke a tool and then make notes let me think abou this properly {'X' * 20000}",
-                }
-            ]
-            + [
-                {
-                    "type": "tool_use",
-                    "id": "call_2",
-                    "name": "vectorstore",
-                    "input": {},  # dict, not string
-                }
-            ],
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "call_2",
-                    "content": f"retrieved documents from vectors tore {'X' * 20000}",
-                }
-            ],
-        },
-        {
-            "role": "user",
-            "content": f"<memory-reminder>: You just used a tool. Make sure to update your journal. Current journal: {'X' * 20000}</memory-reminder>",
-        },
-        {
-            "role": "assistant",
-            "content": [
-                {
-                    "type": "thinking",
-                    "thinking": f"User is right I shd update my journal with new findings {'X' * 20000}",
-                }
-            ]
-            + [
-                {
-                    "type": "tool_use",
-                    "id": "call_3",
-                    "name": "write_to_journal",
-                    "input": {},  # dict, not string
-                }
-            ],
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "call_3",
-                    "content": f"Journal updated and the diff is {'X' * 20000}",
-                }
-            ],
-        },
-    ]
+    import copy
+    from tests.test_messages import TEST_MESSAGES
+    test_messages = copy.deepcopy(TEST_MESSAGES)
 
     def count_tokens(msg):
         content = msg.get("content")
