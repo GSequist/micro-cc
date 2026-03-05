@@ -58,6 +58,14 @@ python start_.py /path/to/your/project
 - `/clear` — reset conversation
 - `/exit` — quit
 
+## Terminal
+
+Recommended: **iTerm2**
+
+For `Option+Enter` (submit) to work, configure iTerm2:
+
+`iTerm2 → Settings → Profiles → Keys → General → Left Option Key → Esc+`
+
 ## Shell Alias
 
 Add to `~/.zshrc`:
@@ -84,7 +92,7 @@ claude_loop_.py (Core)              API calls, tool execution, JSONL storage
 tools/                              bash_, read_, write_, edit_, glob_, grep_
        │
        ▼
-~/.micro-cc/projects/{name}_{hash}/ conversation persistence
+micro-cc/projects/{name}_{hash}/  conversation persistence
 ```
 
 **How it works:**
