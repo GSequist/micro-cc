@@ -182,7 +182,7 @@ make_plan, update_step, show_full_plan, add_step
             else:
                 response = await a_model_call(
                     input=trimmed_loop_msgs,
-                    model="claude-4.6",
+                    model="opus-4.6",
                     tools=tool_schemas,
                     thinking=True,
                     stream=False,
