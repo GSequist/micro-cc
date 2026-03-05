@@ -2,7 +2,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse, urlunparse
 from youtube_transcript_api.formatters import SRTFormatter
 from youtube_transcript_api import YouTubeTranscriptApi
 from typing import Any, Dict, List, Optional, Union
-from models.anthropic import model_call
+from models.anthropic import a_model_call
 from bs4 import BeautifulSoup
 import pdfminer.high_level
 import pandas as pd
@@ -631,7 +631,7 @@ class ImageConverter(MediaConverter):
             image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
             data_uri = f"data:{content_type};base64,{image_base64}"
 
-        response = asyncio.run(model_call(input=prompt, encoded_image=data_uri))
+        response = asyncio.run(a_model_call(input=prompt, encoded_image=data_uri))
         return response.content[0].text
 
 
