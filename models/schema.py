@@ -13,7 +13,7 @@ import json
 import re
 
 
-INTERNAL_PARAMS = ["project_dir"]
+INTERNAL_PARAMS = ["project_dir", "end_resp"]
 
 
 def python_type_to_json_schema(py_type) -> Dict[str, Any]:

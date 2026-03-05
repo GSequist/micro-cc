@@ -246,7 +246,8 @@ make_plan, update_step, show_full_plan, add_step
                     execute_tool_call(
                         tool_block,
                         tools,
-                        project_dir
+                        project_dir,
+                        end_resp,
                     )
                     for tool_block in local_tool_blocks
                 ]
