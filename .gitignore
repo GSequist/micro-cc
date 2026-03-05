@@ -161,3 +161,4 @@ oauth.py
 
 ### custom
 *.md
+/projects

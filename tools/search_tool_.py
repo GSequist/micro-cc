@@ -20,10 +20,10 @@ import os
 
 load_dotenv()
 
-_openai_client = AsyncOpenAI(timeout=300)
+_openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""), timeout=300)
 _litellm_client = AsyncOpenAI(
     base_url=os.getenv("LITELLM_BASE_URL"),
-    api_key=os.getenv("LITELLM_API_KEY"),
+    api_key=os.getenv("LITELLM_API_KEY", ""),
     timeout=300,
 )
 

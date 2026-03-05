@@ -18,7 +18,9 @@ def _get_storage_dir(project_dir: str) -> Path:
     folder_name = os.path.basename(normalized) or "root"
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in folder_name)
 
-    storage_dir = Path.home() / ".micro-cc" / "projects" / f"{safe_name}_{path_hash}"
+    # Store inside micro-cc/projects/ (visible in project tree)
+    micro_cc_root = Path(__file__).resolve().parent.parent
+    storage_dir = micro_cc_root / "projects" / f"{safe_name}_{path_hash}"
     storage_dir.mkdir(parents=True, exist_ok=True)
 
     # Store project path mapping for debugging
