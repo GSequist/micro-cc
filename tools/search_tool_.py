@@ -27,8 +27,16 @@ _litellm_client = AsyncOpenAI(
     timeout=300,
 )
 
+_EMBED_MODELS = {
+    "LiteLLM": "azure.text-embedding-3-large",
+    "Anthropic": "text-embedding-3-small",
+}
+
 def _get_embed_client(end_resp: str) -> AsyncOpenAI:
     return _litellm_client if end_resp == "LiteLLM" else _openai_client
+
+def _get_embed_model(end_resp: str) -> str:
+    return _EMBED_MODELS.get(end_resp, "text-embedding-3-small")
 
 # tool_name -> {func, schema, search_text, embedding (lazily computed)}
 TOOL_CATALOG = {}
@@ -118,7 +126,7 @@ async def _ensure_embeddings(end_resp: str = "Anthropic"):
         return
 
     response = await client.embeddings.create(
-        input=search_texts, model="text-embedding-3-small"
+        input=search_texts, model=_get_embed_model(end_resp)
     )
 
     # Store embeddings back - tools first, then MCPs
@@ -151,7 +159,7 @@ async def search_tools(
 
     # Embed the query
     query_resp = await client.embeddings.create(
-        input=query, model="text-embedding-3-small"
+        input=query, model=_get_embed_model(end_resp)
     )
     query_emb = np.array(query_resp.data[0].embedding)
 
