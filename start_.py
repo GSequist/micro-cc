@@ -94,9 +94,9 @@ async def start_():
     console.print("│                                        │")
     console.print("╰────────────────────────────────────────╯\n")
 
-    # Get project dir from arg or default to cwd
+    # Get project dir from arg or default to cwd (always absolute)
     if len(sys.argv) > 1:
-        project_dir = sys.argv[1]
+        project_dir = os.path.abspath(sys.argv[1])
     else:
         project_dir = os.getcwd()
 

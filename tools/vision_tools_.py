@@ -9,7 +9,7 @@ async def vision(img_path: str, query: str, *, project_dir, end_resp="Anthropic"
     Handles photographs, diagrams, charts, screenshots, and images with text.
 
     Args:
-        img_path: Image filename in user workspace
+        img_path: Absolute or relative path to the image file
         query: What to ask about the image
     """
     try:

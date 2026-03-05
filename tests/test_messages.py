@@ -12,8 +12,8 @@ Matches exact shapes from claude_loop_.py:
 
 PAD = "X" * 20000
 
-# Real signature from Anthropic thinking response (~624 chars, base64-encoded)
-SIG = "Es4DCkYICxgCKkAqiw5w4QQYT1UEeP2VRSCpI3lscoM5stfvI9w9UT9n1gpEpz9m3hdBpCBARj1FC64Xolj612Mb/tE4RZ1INE1+EgxY9eyWJd2NHhmftOAaDkEQEBAQEBDwMxMTEQMDxREREBMTMx8fExMfAzAwMPDwMDAwMDDxMTMzMx8TEhIfAxMTMzHx8TExMDDw8DAw8PMzHxMTHwMDAzExMfHxMTExEREhIfExITHx8TExMfHxMTMzMfDxMSEx8TExMfHxMTEwMPDwMDAw8TEx8fExMfAwMPDwMDDx8TExMfExITHx8TExMTExMfExMTHx8TExMfHxMTExMDDw8DAwMTEx8fExITHx8TExMTExMfHxMTMzMfHxMTExMDDw8DAwMDExMfHxMSEx8DAwMPDwMDDxMTHx8TExMDDw8DAwMPExMTHx8TExMfAwMPDwMDDxMTHx8TExMfAwMDA"
+# Need real signature from Anthropic thinking response (~624 chars, base64-encoded)
+SIG = "Es4DCkYICxgCKkAq..."
 
 TEST_MESSAGES = [
     # Initial system prompt (claude_loop_ line 92)
