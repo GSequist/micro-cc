@@ -121,6 +121,41 @@ async def start_():
 
     console.print(Markdown(f"→ {project_dir}\n"))
 
+    # Replay stored conversation history
+    from utils.msg_store_ import load_msgs
+    existing_msgs = load_msgs(project_dir)
+    if existing_msgs:
+        console.print("  ─── conversation history ───")
+        for msg in existing_msgs:
+            role = msg.get("role")
+            content = msg.get("content", "")
+
+            if role == "system":
+                continue
+
+            if role == "user":
+                if isinstance(content, str) and not content.startswith("<system-reminder>"):
+                    console.print(Markdown(f"\n› {content.strip()}\n"))
+                elif isinstance(content, list):
+                    # tool_result blocks — show compact
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            out = str(block.get("content", ""))[:200]
+                            console.print(f"  ✓ {out}...")
+
+            elif role == "assistant":
+                if isinstance(content, str):
+                    console.print(Markdown(f"\n{content}\n"))
+                elif isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict):
+                            if block.get("type") == "text":
+                                console.print(Markdown(f"\n{block['text']}\n"))
+                            elif block.get("type") == "tool_use":
+                                console.print(Markdown(f"  🔧 `{block['name']}`"))
+
+        console.print("  ─── end history (/clear to reset) ───\n")
+
     # Start file watcher + process tracker
     watcher = FileWatcher(project_dir)
     watcher.start()
