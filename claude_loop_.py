@@ -221,6 +221,38 @@ make_plan, update_step, show_full_plan, add_step
             if tool_use_blocks:
                 # Filter out MCP tool calls - they execute internally in API
                 local_tool_blocks = [tb for tb in tool_use_blocks if tb.name in tools]
+                unknown_blocks = [tb for tb in tool_use_blocks if tb.name not in tools]
+
+                # LiteLLM/OpenAI can hallucinate tool names not in schema
+                # Must respond with error tool_result or loop hangs forever
+                if unknown_blocks:
+                    content_blocks = []
+                    if thinking_block:
+                        content_blocks.append({
+                            "type": "thinking",
+                            "thinking": thinking_block.thinking,
+                            "signature": thinking_block.signature,
+                        })
+                    for tb in unknown_blocks:
+                        content_blocks.append({
+                            "type": "tool_use",
+                            "id": tb.id,
+                            "name": tb.name,
+                            "input": tb.input,
+                        })
+                    msgs.append({"role": "assistant", "content": content_blocks})
+                    msgs.append({"role": "user", "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tb.id,
+                            "content": f"Error: tool '{tb.name}' not found. Use search_tools to discover it first.",
+                            "is_error": True,
+                        }
+                        for tb in unknown_blocks
+                    ]})
+                    store_msgs(project_dir, msgs)
+                    if not local_tool_blocks:
+                        continue  # Re-enter loop, model will self-correct
 
                 for tool_use_block in local_tool_blocks:
                     yield {
