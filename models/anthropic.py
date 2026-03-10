@@ -104,7 +104,7 @@ async def a_model_call(
         api_parameters["tools"] = tools
         api_parameters["tool_choice"] = {
             "type": "auto",
-            "disable_parallel_tool_use": True,
+            "disable_parallel_tool_use": False,
         }
 
     betas = ["mcp-client-2025-11-20"]

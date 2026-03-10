@@ -43,7 +43,7 @@ async def claude_loop(
 ):
     """micro cc"""
 
-    max_tokens = 90000
+    max_tokens = 80000
     redis_state = RedisStateManager()
 
     msgs = load_msgs(project_dir)
@@ -137,6 +137,9 @@ make_plan, update_step, show_full_plan, add_step
             """,
         }
     )
+
+    # Checkpoint: persist user message immediately (survives crashes mid-loop)
+    store_msgs(project_dir, msgs)
 
     while True:
         # Build system reminders
@@ -311,6 +314,9 @@ make_plan, update_step, show_full_plan, add_step
 
                     msgs.append({"role": "user", "content": tool_result_blocks})
 
+                    # Checkpoint after each tool round
+                    store_msgs(project_dir, msgs)
+
             # No tool use = final response
             if not tool_use_blocks and text_block:
                 msgs.append({"role": "assistant", "content": text_block.text})
@@ -319,6 +325,14 @@ make_plan, update_step, show_full_plan, add_step
                 yield {
                     "type": "final_text",
                     "content": text_block.text,
+                }
+                break
+
+            # No text and no tools - break, don't loop
+            if not tool_use_blocks and not text_block:
+                yield {
+                    "type": "final_text",
+                    "content": thinking_block.thinking if thinking_block else "Empty response from model.",
                 }
                 break
 
