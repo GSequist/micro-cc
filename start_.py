@@ -139,7 +139,9 @@ async def start_():
 
             if role == "user":
                 if isinstance(content, str) and not content.startswith("<system-reminder>"):
+                    console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                     console.print(Markdown(f"\n› {content.strip()}\n"))
+                    console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                 elif isinstance(content, list):
                     # tool_result blocks — show compact
                     for block in content:
@@ -187,6 +189,10 @@ async def start_():
                 console.print(f"  Endpoint: {endp_resp}")
                 console.print(Markdown(f"→ {project_dir}\n"))
                 continue
+
+            console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            console.print(Markdown(f"  › {query}"))
+            console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
             try:
                 await consumeloop(query, project_dir, endp_resp, console, watcher)
