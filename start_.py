@@ -67,6 +67,15 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
             pass  # Ready for next input
 
 
+def print_banner(console):
+    console.print("\n╭─ micro-cc ─────────────────────────────╮")
+    console.print("│                                        │")
+    console.print("│  Option→Enter  submit /clear  reset    │")
+    console.print("│  Ctrl+C     interrupt /exit   quit     │")
+    console.print("│                                        │")
+    console.print("╰────────────────────────────────────────╯\n")
+
+
 async def start_():
     """Minimal CLI entry point for micro-cc.
 
@@ -87,12 +96,7 @@ async def start_():
 
     console = Console()
 
-    console.print("\n╭─ micro-cc ─────────────────────────────╮")
-    console.print("│                                        │")
-    console.print("│  Option→Enter  submit /clear  reset    │")
-    console.print("│  Ctrl+C     interrupt /exit   quit     │")
-    console.print("│                                        │")
-    console.print("╰────────────────────────────────────────╯\n")
+    print_banner(console)
 
     # Get project dir from arg or default to cwd (always absolute)
     if len(sys.argv) > 1:
@@ -178,7 +182,10 @@ async def start_():
             if query.lower() == "/clear":
                 from utils.msg_store_ import erase_msgs
                 erase_msgs(project_dir)
-                console.print(Markdown("conversation cleared\n"))
+                console.clear()
+                print_banner(console)
+                console.print(f"  Endpoint: {endp_resp}")
+                console.print(Markdown(f"→ {project_dir}\n"))
                 continue
 
             try:

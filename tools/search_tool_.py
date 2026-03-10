@@ -5,6 +5,7 @@ import numpy as np
 # Import all discoverable tools
 from tools.vision_tools_ import vision
 from tools.web_tools_ import (
+    visit_url,
     web_search,
     archive_search,
     page_up,
@@ -59,6 +60,10 @@ def _register(func, search_text: str):
 _register(vision, "analyze image vision see picture screenshot OCR read image")
 
 # Web research tools - full suite for autonomous web research
+_register(
+    visit_url,
+    "visit any url to receive back its content in markdown",
+)
 _register(
     web_search,
     "web search google internet query find information online browse",
