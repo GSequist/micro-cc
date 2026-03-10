@@ -74,7 +74,7 @@ async def claude_loop(
     #########discovered tools
     discovered_tools = redis_state.get_discovered_tools(project_dir)
     for tool_name in discovered_tools:
-        if tool_name not in default_tools:
+        if tool_name not in tools:
             tool_schemas.append(get_tool_schema(tool_name))
             tools[tool_name] = get_tool_func(tool_name)
 
@@ -277,16 +277,21 @@ make_plan, update_step, show_full_plan, add_step
 
                     tool_result_blocks = []
                     for tool_block, result in zip(local_tool_blocks, tool_results):
-                        # Handle search_tools discovery
+                        # Handle search_tools discovery - inject into live loop
                         if tool_block.name == "search_tools" and isinstance(result, dict):
-                            redis_state.add_discovered_tools(
-                                project_dir,
-                                result.get("discovered_tools", []),
-                            )
-                            redis_state.add_discovered_mcps(
-                                project_dir,
-                                result.get("discovered_mcps", []),
-                            )
+                            new_tools = result.get("discovered_tools", [])
+                            new_mcps = result.get("discovered_mcps", [])
+                            redis_state.add_discovered_tools(project_dir, new_tools)
+                            redis_state.add_discovered_mcps(project_dir, new_mcps)
+                            # Inject into current loop so next API call has them
+                            for t_name in new_tools:
+                                if t_name not in tools:
+                                    tool_schemas.append(get_tool_schema(t_name))
+                                    tools[t_name] = get_tool_func(t_name)
+                            for m_name in new_mcps:
+                                if m_name not in [s.get("mcp_server_name") for s in tool_schemas if isinstance(s, dict) and s.get("type") == "mcp_toolset"]:
+                                    mcp_servers.append(get_mcp_server(m_name))
+                                    tool_schemas.append(get_mcp_toolset(m_name))
 
                         yield {
                             "type": "tool_result",
