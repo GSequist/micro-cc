@@ -84,7 +84,7 @@ async def claude_loop(
     mcp_toolsets = [get_mcp_toolset(name) for name in discovered_mcp]
     tool_schemas.extend(mcp_toolsets)  # MCP toolsets go in tools array!
 
-    yield {"type": "status", "message": "starting..."}
+    yield {"type": "status", "message": ""}
 
     # If this is the first message, initialize with system prompt
     if not msgs:
@@ -193,7 +193,7 @@ make_plan, update_step, show_full_plan, add_step
                 )
 
             if stream is None:
-                yield {"type": "error", "message": "Model call failed after retries"}
+                yield {"type": "error", "message": "model call failed after retries"}
                 break
 
             response = None
@@ -206,7 +206,7 @@ make_plan, update_step, show_full_plan, add_step
                     response = event["response"]
 
             if response is None:
-                yield {"type": "error", "message": "Model call failed after retries"}
+                yield {"type": "error", "message": "model call failed after retries"}
                 break
 
             thinking_block = next(
@@ -367,7 +367,7 @@ make_plan, update_step, show_full_plan, add_step
         except Exception as e:
             yield {
                 "type": "error",
-                "message": f"Error: {type(e).__name__}: {e}",
+                "message": f"{type(e).__name__}: {e}",
             }
             break  # Exit on error
 
