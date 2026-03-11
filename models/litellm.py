@@ -67,6 +67,7 @@ def _msgs_to_openai(anthropic_msgs):
 
     Handles: system, user (string/multimodal/tool_result),
     assistant (string/tool_use+thinking blocks).
+    Images converted to OpenAI image_url format.
     """
     out = []
     for msg in anthropic_msgs:
@@ -142,6 +143,8 @@ def _msgs_to_openai(anthropic_msgs):
                         },
                     })
                 elif block.get("type") == "document":
+                    # Document blocks from tool results (vectorstore citations etc.)
+                    # No OpenAI equivalent — convert to text placeholder
                     other_parts.append({
                         "type": "text",
                         "text": "[PDF document attached]",
@@ -219,7 +222,7 @@ async def l_model_call(
     mcp_servers: list = None,  # ignored — no MCP through proxy
     stream: bool = False,
     thinking=False,
-    max_tokens: int = 60000,
+    max_tokens: int = 120000,
     client_timeout: int = 480,
     pdf: str = None,
     retries: int = 3,
@@ -234,7 +237,6 @@ async def l_model_call(
     base_sleep = 2
 
     # ---- Build messages ----
-    system_prompts = []
     messages = []
 
     if pdf:
@@ -254,25 +256,16 @@ async def l_model_call(
         messages = [{"role": "user", "content": input}]
     else:
         # Conversation history — convert from Anthropic format
-        converted = _msgs_to_openai(input)
-        for msg in converted:
-            if msg["role"] == "system":
-                system_prompts.append(msg["content"])
-            else:
-                messages.append(msg)
+        # System msgs pass through as role: "system" inline in the array
+        messages = _msgs_to_openai(input)
 
     # ---- API parameters ----
     api_params = {
         "model": model,
-        "messages": messages,
         "max_tokens": max_tokens,
         "stream": False,  # TODO: streaming support
+        "messages": messages,
     }
-
-    if system_prompts:
-        api_params["messages"] = [
-            {"role": "system", "content": "\n".join(system_prompts)}
-        ] + messages
 
     if thinking:
         api_params["reasoning_effort"] = "medium"
