@@ -160,5 +160,5 @@ cython_debug/
 oauth.py
 
 ### custom
-*.md
+CLAUDE.md
 /projects
