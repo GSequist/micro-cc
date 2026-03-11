@@ -191,8 +191,6 @@ async def start_():
                 continue
 
             console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            console.print(Markdown(f"  › {query}"))
-            console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
             try:
                 await consumeloop(query, project_dir, endp_resp, console, watcher)
