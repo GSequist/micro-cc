@@ -7,12 +7,28 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.completion import PathCompleter
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.live import Live
 from utils.file_watcher_ import FileWatcher
 
 
 async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatcher):
+    _stream_text = ""
+    _live = None
+    _thinking_started = False
+
     async for event in claude_loop(query=query, project_dir=project_dir, end_resp=end_resp, watcher=watcher):
         etype = event.get("type")
+
+        # Stop live display when transitioning away from text deltas
+        if _live and etype != "text_delta":
+            _live.stop()
+            _live = None
+            _stream_text = ""
+
+        # End thinking line when transitioning away
+        if _thinking_started and etype != "thinking_delta":
+            print()
+            _thinking_started = False
 
         if etype == "status":
             console.print(f"  ⋯ {event.get('message', '')}")
@@ -36,15 +52,19 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
         elif etype == "cancelled":
             console.print("  [operation cancelled, conversation saved]")
 
-        elif etype == "thinking":
-            # Show truncated thinking as status
-            thinking = event.get("content", "")
-            console.print(Markdown(f"  💭 {thinking}"))
+        elif etype == "thinking_delta":
+            if not _thinking_started:
+                print("  💭 ", end="", flush=True)
+                _thinking_started = True
+            print(event.get("content", ""), end="", flush=True)
 
-        elif etype == "text":
-            # Intermediate text (before tool calls)
-            text = event.get("content", "")
-            console.print(Markdown(f"  📝 {text}"))
+        elif etype == "text_delta":
+            _stream_text += event.get("content", "")
+            if _live is None:
+                _live = Live(Markdown(_stream_text), console=console, refresh_per_second=10)
+                _live.start()
+            else:
+                _live.update(Markdown(_stream_text))
 
         elif etype == "tool_call":
             name = event.get("name", "?")
@@ -57,14 +77,13 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
             console.print("  ─────────────────────────────────────")
 
         elif etype == "final_text":
-            # Final response - print full
-            console.print(Markdown(f"\n{event.get('content', '')}\n"))
+            pass  # signal only — text already rendered via deltas
 
         elif etype == "error":
             console.print(Markdown(f"\n⚠️  {event.get('message', 'Unknown error')}\n"))
 
         elif etype == "done":
-            pass  # Ready for next input
+            pass
 
 
 def print_banner(console):

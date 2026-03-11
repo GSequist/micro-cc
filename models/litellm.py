@@ -210,6 +210,60 @@ def _wrap_response(openai_resp):
     return Response(content=blocks)
 
 
+async def _wrap_stream(openai_stream):
+    """Accumulate OpenAI chunks, yield Anthropic-shaped events,
+    return final Response with ContentBlocks."""
+    text = ""
+    thinking = ""
+    thinking_signature = ""
+    tool_calls = {}  # index -> {id, name, arguments_str}
+
+    async for chunk in openai_stream:
+        delta = chunk.choices[0].delta
+
+        # Text — can yield immediately
+        if delta.content:
+            text += delta.content
+            yield {"type": "text_delta", "text": delta.content}
+
+        # Thinking — can yield immediately
+        rc = getattr(delta, "reasoning_content", None)
+        if rc:
+            thinking += rc
+            yield {"type": "thinking_delta", "thinking": rc}
+
+        # Tool calls — must buffer arguments
+        if delta.tool_calls:
+            for tc in delta.tool_calls:
+                idx = tc.index
+                if idx not in tool_calls:
+                    tool_calls[idx] = {
+                        "id": tc.id or "",
+                        "name": tc.function.name if tc.function else "",
+                        "args": "",
+                    }
+                if tc.function and tc.function.arguments:
+                    tool_calls[idx]["args"] += tc.function.arguments
+
+    # Stream done — build final Response for claude_loop_
+    blocks = []
+    if thinking:
+        blocks.append(
+            ContentBlock(
+                type="thinking", thinking=thinking, signature=thinking_signature
+            )
+        )
+    if text:
+        blocks.append(ContentBlock(type="text", text=text))
+    for tc in tool_calls.values():
+        args = json.loads(tc["args"]) if tc["args"] else {}
+        blocks.append(
+            ContentBlock(type="tool_use", name=tc["name"], input=args, id=tc["id"])
+        )
+
+    yield {"type": "response", "response": Response(content=blocks)}
+
+
 # ---------------------------------------------------------------------------
 # Main model call — same signature as models/anthropic.py
 # ---------------------------------------------------------------------------
@@ -263,7 +317,7 @@ async def l_model_call(
     api_params = {
         "model": model,
         "max_tokens": max_tokens,
-        "stream": False,  # TODO: streaming support
+        "stream": stream,
         "messages": messages,
     }
 
@@ -280,7 +334,10 @@ async def l_model_call(
     for attempt in range(retries):
         try:
             response = await client.chat.completions.create(**api_params)
-            return _wrap_response(response)
+            if stream:
+                return _wrap_stream(response)
+            else:
+                return _wrap_response(response)
 
         except Exception as e:
             import traceback
@@ -299,4 +356,3 @@ async def l_model_call(
 
 
 ##########################################################
-

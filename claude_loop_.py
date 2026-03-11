@@ -175,21 +175,35 @@ make_plan, update_step, show_full_plan, add_step
 
         try:
             if end_resp == "LiteLLM":
-                response = await l_model_call(
+                stream = await l_model_call(
                     input=trimmed_loop_msgs,
                     model="bedrock.anthropic.claude-opus-4-6",
                     tools=tool_schemas,
                     thinking=True,
-                    stream=False,
+                    stream=True,
                 )
             else:
-                response = await a_model_call(
+                stream = await a_model_call(
                     input=trimmed_loop_msgs,
                     model="opus-4.6",
                     tools=tool_schemas,
+                    mcp_servers=mcp_servers if mcp_servers else None,
                     thinking=True,
-                    stream=False,
+                    stream=True,
                 )
+
+            if stream is None:
+                yield {"type": "error", "message": "Model call failed after retries"}
+                break
+
+            response = None
+            async for event in stream:
+                if event["type"] == "text_delta":
+                    yield {"type": "text_delta", "content": event["text"]}
+                elif event["type"] == "thinking_delta":
+                    yield {"type": "thinking_delta", "content": event["thinking"]}
+                elif event["type"] == "response":
+                    response = event["response"]
 
             if response is None:
                 yield {"type": "error", "message": "Model call failed after retries"}
@@ -205,18 +219,7 @@ make_plan, update_step, show_full_plan, add_step
                 block for block in response.content if block.type == "tool_use"
             ]
 
-            if thinking_block:
-                yield {
-                    "type": "thinking",
-                    "content": thinking_block.thinking,
-                }
-
-            if text_block and tool_use_blocks:
-                # Intermediate text (more tool calls coming)
-                yield {
-                    "type": "text",
-                    "content": text_block.text,
-                }
+            # thinking + text already streamed as deltas above
 
             if tool_use_blocks:
                 # Filter out MCP tool calls - they execute internally in API
@@ -349,23 +352,16 @@ make_plan, update_step, show_full_plan, add_step
                     # Checkpoint after each tool round
                     store_msgs(project_dir, msgs)
 
-            # No tool use = final response
+            # No tool use = final response (text already streamed as deltas)
             if not tool_use_blocks and text_block:
                 msgs.append({"role": "assistant", "content": text_block.text})
                 store_msgs(project_dir, msgs)
-
-                yield {
-                    "type": "final_text",
-                    "content": text_block.text,
-                }
+                yield {"type": "final_text"}
                 break
 
-            # No text and no tools - break, don't loop
+            # No text and no tools - break
             if not tool_use_blocks and not text_block:
-                yield {
-                    "type": "final_text",
-                    "content": thinking_block.thinking if thinking_block else "Empty response from model.",
-                }
+                yield {"type": "final_text"}
                 break
 
         except Exception as e:

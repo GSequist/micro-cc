@@ -1,11 +1,71 @@
 from typing import List, Dict, Any, Optional, Union
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
+from dataclasses import dataclass, field
 import asyncio
+import json
 
 
 load_dotenv()
 
+
+@dataclass
+class ContentBlock:
+    type: str
+    text: str = ""
+    thinking: str = ""
+    signature: str = ""
+    name: str = ""
+    input: dict = field(default_factory=dict)
+    id: str = ""
+
+
+@dataclass
+class Response:
+    content: list = field(default_factory=list)
+
+
+async def _wrap_stream(raw_stream):
+    """Iterate Anthropic SDK stream, yield standardized deltas + final Response."""
+    text = ""
+    thinking = ""
+    thinking_signature = ""
+    tool_blocks = []
+    current_tool = None
+
+    async for event in raw_stream:
+        if event.type == "content_block_start":
+            if event.content_block.type == "tool_use":
+                current_tool = {"id": event.content_block.id, "name": event.content_block.name, "input_json": ""}
+
+        elif event.type == "content_block_delta":
+            if event.delta.type == "text_delta":
+                text += event.delta.text
+                yield {"type": "text_delta", "text": event.delta.text}
+            elif event.delta.type == "thinking_delta":
+                thinking += event.delta.thinking
+                yield {"type": "thinking_delta", "thinking": event.delta.thinking}
+            elif event.delta.type == "signature_delta":
+                thinking_signature += event.delta.signature or ""
+            elif event.delta.type == "input_json_delta":
+                if current_tool:
+                    current_tool["input_json"] += event.delta.partial_json
+
+        elif event.type == "content_block_stop":
+            if current_tool:
+                args = json.loads(current_tool["input_json"]) if current_tool["input_json"] else {}
+                tool_blocks.append(current_tool | {"input": args})
+                current_tool = None
+
+    blocks = []
+    if thinking:
+        blocks.append(ContentBlock(type="thinking", thinking=thinking, signature=thinking_signature))
+    if text:
+        blocks.append(ContentBlock(type="text", text=text))
+    for tb in tool_blocks:
+        blocks.append(ContentBlock(type="tool_use", name=tb["name"], input=tb["input"], id=tb["id"]))
+
+    yield {"type": "response", "response": Response(content=blocks)}
 
 async def a_model_call(
     input: Union[List[Dict[str, Any]], str],
@@ -126,7 +186,7 @@ async def a_model_call(
     for attempt in range(retries):
         try:
             response = await client.beta.messages.create(**api_parameters)
-            return response
+            return _wrap_stream(response) if stream else response
 
         except Exception as e:
             print(f"\n[model_call]: {e}", flush=True)
