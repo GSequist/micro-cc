@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import sys
 from claude_loop_ import claude_loop
 from prompt_toolkit import PromptSession
@@ -121,6 +122,34 @@ async def start_():
 
     session = PromptSession(key_bindings=bindings, multiline=True)
 
+    # Large-paste condensing — keep buffer small, easy to select/delete
+    _paste_store = {}
+    _paste_id = [0]
+    _orig_insert = session.default_buffer.insert_text
+    _PASTE_THRESH = 2000
+    _PASTE_RE = re.compile(r'⟪paste:(\d+)\|\d+ chars, \d+ lines⟫')
+
+    def _condensed_insert(data, overwrite=False, move_cursor=True, fire_event=True):
+        if len(data) > _PASTE_THRESH:
+            _paste_id[0] += 1
+            pid = _paste_id[0]
+            _paste_store[pid] = data
+            n_lines = data.count('\n') + 1
+            tag = f"⟪paste:{pid}|{len(data)} chars, {n_lines} lines⟫"
+            return _orig_insert(tag, overwrite, move_cursor, fire_event)
+        return _orig_insert(data, overwrite, move_cursor, fire_event)
+
+    session.default_buffer.insert_text = _condensed_insert
+
+    def _expand_pastes(text):
+        def _replacer(m):
+            pid = int(m.group(1))
+            return _paste_store.get(pid, m.group(0))
+        result = _PASTE_RE.sub(_replacer, text)
+        _paste_store.clear()
+        _paste_id[0] = 0
+        return result
+
     console = Console()
 
     print_banner(console)
@@ -212,6 +241,7 @@ async def start_():
     while True:
         try:
             query = (await session.prompt_async("› ")).strip()
+            query = _expand_pastes(query)
 
             if not query:
                 continue
@@ -224,6 +254,8 @@ async def start_():
                 from utils.msg_store_ import erase_msgs
 
                 erase_msgs(project_dir)
+                _paste_store.clear()
+                _paste_id[0] = 0
                 console.clear()
                 print_banner(console)
                 console.print(f"  ⚡ {endp_resp}")
