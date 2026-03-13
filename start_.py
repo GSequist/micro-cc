@@ -6,6 +6,7 @@ from claude_loop_ import claude_loop
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.completion import PathCompleter
+from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.live import Live
@@ -96,12 +97,18 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
 
 
 def print_banner(console):
-    console.print("\n╭─ micro-cc ─────────────────────────────╮")
-    console.print("│                                        │")
-    console.print("│  Option→Enter  submit /clear  reset    │")
-    console.print("│  Ctrl+C     interrupt /exit   quit     │")
-    console.print("│                                        │")
-    console.print("╰────────────────────────────────────────╯\n")
+    console.print("""
+  [bold white]███╗   ███╗██╗ ██████╗██████╗  ██████╗[/]
+  [bold white]████╗ ████║██║██╔════╝██╔══██╗██╔═══██╗[/]
+  [bold white]██╔████╔██║██║██║     ██████╔╝██║   ██║[/]
+  [dim]██║╚██╔╝██║██║██║     ██╔══██╗██║   ██║[/]
+  [dim]██║ ╚═╝ ██║██║╚██████╗██║  ██║╚██████╔╝[/]
+  [dim]╚═╝     ╚═╝╚═╝ ╚═════╝╚═╝  ╚═╝ ╚═════╝[/]
+  [dim]─────────[/] [bold]cc[/] [dim]──────────────────────────[/]
+
+  [dim]⌥↩  submit   /clear  reset   ctrl+c  interrupt[/]
+  [dim]↩   newline  /exit   quit    /plan   plan[/]
+""")
 
 
 async def start_():
@@ -120,7 +127,13 @@ async def start_():
     def _(event):
         event.current_buffer.validate_and_handle()
 
-    session = PromptSession(key_bindings=bindings, multiline=True)
+    slash_completer = WordCompleter(
+        ["/clear", "/exit", "/plan", "/quit"],
+        sentence=True
+    )
+
+    session = PromptSession(key_bindings=bindings, multiline=True,completer=slash_completer,)
+
 
     # Large-paste condensing — keep buffer small, easy to select/delete
     _paste_store = {}
@@ -229,12 +242,15 @@ async def start_():
 
         console.print("  ╰─── end history · /clear to reset ───\n")
 
-    # Start file watcher + process tracker
+    # Start file watcher + process tracker + cache cleanup
     watcher = FileWatcher(project_dir)
     watcher.start()
     from utils.process_tracker import init as init_process_tracker
+    from cache.redis_cache import RedisStateManager
 
     init_process_tracker()
+    _state_mgr = RedisStateManager()
+    _state_mgr.start_cleanup_task()
     console.print("  👾 watching for file changes\n")
 
     # Main loop
@@ -274,10 +290,12 @@ async def start_():
             continue
         except EOFError:
             watcher.stop()
+            _state_mgr.stop_cleanup_task()
             console.print("\n  👋 bye\n")
             break
 
     watcher.stop()
+    _state_mgr.stop_cleanup_task()
 
 
 if __name__ == "__main__":

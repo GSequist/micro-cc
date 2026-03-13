@@ -97,27 +97,27 @@ _register(
     "read downloaded file convert to text markdown xlsx pptx docx pdf content",
 )
 
-MCP_CATALOG = {
-    "pubmed": { ########pubmed heavily rate limited by Anthropic but ok for personal
-        "server": {
-            "type": "url",
-            "url": "https://pubmed.mcp.claude.com/mcp",
-            "name": "pubmed",
-        },
-        "toolset": {"type": "mcp_toolset", "mcp_server_name": "pubmed"},
-        "search_text": "pubmed medical literature research papers scientific articles",
-        "embedding": None,
-    },
-    "deepwiki": {
-        "server": {
-            "type": "url",
-            "url": "https://mcp.deepwiki.com/mcp",
-            "name": "deepwiki",
-        },
-        "toolset": {"type": "mcp_toolset", "mcp_server_name": "deepwiki"},
-        "search_text": "github repository documentation wiki architecture explanation codebase understanding",
-        "embedding": None,
-    },
+MCP_CATALOG = {  #########enable optionally -> not supported for litellm instance
+    # "pubmed": { ########pubmed heavily rate limited by Anthropic but ok for personal
+    #     "server": {
+    #         "type": "url",
+    #         "url": "https://pubmed.mcp.claude.com/mcp",
+    #         "name": "pubmed",
+    #     },
+    #     "toolset": {"type": "mcp_toolset", "mcp_server_name": "pubmed"},
+    #     "search_text": "pubmed medical literature research papers scientific articles",
+    #     "embedding": None,
+    # },
+    # "deepwiki": {
+    #     "server": {
+    #         "type": "url",
+    #         "url": "https://mcp.deepwiki.com/mcp",
+    #         "name": "deepwiki",
+    #     },
+    #     "toolset": {"type": "mcp_toolset", "mcp_server_name": "deepwiki"},
+    #     "search_text": "github repository documentation wiki architecture explanation codebase understanding",
+    #     "embedding": None,
+    # },
 }
 
 

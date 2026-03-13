@@ -110,7 +110,7 @@ class RedisStateManager:
             existing.update(tools)
             data = {"discovered_tools": list(existing)}
             key = self._make_key("discovered_tools", project_dir)
-            self._set_with_ttl(key, data, 3600)
+            self._set_with_ttl(key, data, 180)
         except Exception as e:
             print(f"State error in add_discovered_tools: {e}")
 
@@ -140,7 +140,7 @@ class RedisStateManager:
             existing.update(mcps)
             data = {"discovered_mcps": list(existing)}
             key = self._make_key("discovered_mcps", project_dir)
-            self._set_with_ttl(key, data, 3600)
+            self._set_with_ttl(key, data, 180)
         except Exception as e:
             print(f"State error in add_discovered_mcps: {e}")
 
