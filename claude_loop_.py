@@ -262,6 +262,7 @@ make_plan, update_step, show_full_plan, add_step
                         "type": "tool_call",
                         "name": tool_use_block.name,
                         "input": tool_use_block.input,
+                        "id": tool_use_block.id,
                     }
 
                     if tool_use_block.name in DANGEROUS_TOOLS:
@@ -335,6 +336,7 @@ make_plan, update_step, show_full_plan, add_step
                             "type": "tool_result",
                             "name": tool_block.name,
                             "output": str(result)[:500],  # Truncated for display
+                            "id": tool_block.id,
                         }
 
                         # API requires string content - serialize dicts
