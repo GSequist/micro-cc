@@ -115,13 +115,13 @@ async def sse_claude_loop(query, project_dir, end_resp, watcher, resume=False):
         p = pending.pop(project_dir)
         gen = p["generator"]
         p["approval"]["approved"] = True
-        state = p["state"]
-        in_thinking = state["in_thinking"]
-        in_text = state["in_text"]
-        step_open = state["step_open"]
-        thinking_id = state["thinking_id"]
-        text_id = state["text_id"]
-        msg_id = state["msg_id"]
+        # We emitted finish-step + finish before [DONE], so start clean
+        in_thinking = False
+        in_text = False
+        step_open = False
+        thinking_id = None
+        text_id = None
+        msg_id = p["state"]["msg_id"]
     else:
         # ── Fresh generator ──
         gen = claude_loop(
@@ -249,6 +249,9 @@ async def sse_claude_loop(query, project_dir, end_resp, watcher, resume=False):
 
         # ── Thinking deltas ──
         if etype == "thinking_delta":
+            line = close_text()
+            if line:
+                yield line
             line = open_step()
             if line:
                 yield line
