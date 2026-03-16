@@ -79,6 +79,9 @@ async def upload_files(
 #   tool-approval-request → {type:"tool-approval-request", approvalId, toolCallId}
 #   tool-output-available → {type:"tool-output-available", toolCallId, output}
 #   tool-output-denied    → {type:"tool-output-denied", toolCallId}
+#   source              -> {type: 'source-url', sourceId, url, title }
+#   source-doc          ->   {type: 'source-document', sourceId, mediaType, title, filename }
+#   data                ->  {type: 'data-{name}, id, data }
 #   finish-step        → {type:"finish-step"}
 #   finish             → {type:"finish", finishReason}
 #   abort              → {type:"abort", reason?}
@@ -191,6 +194,20 @@ async def sse_claude_loop(query, project_dir, end_resp, watcher, resume=False):
         if etype == "approval_request":
             tool_call_id = event.get("id", f"call-{uuid.uuid4().hex[:8]}")
             approval_id = f"approval-{uuid.uuid4().hex[:8]}"
+            tool_name = event.get("name", "")
+            tool_input = event.get("input", {})
+            print(f"[approval] pausing generator — tool={tool_name} callId={tool_call_id} approvalId={approval_id}")
+
+            # Close any open thinking/text (step already open from tool_call)
+            line = close_thinking()
+            if line:
+                yield line
+            line = close_text()
+            if line:
+                yield line
+
+            # tool-input-available was already emitted by the tool_call handler
+            # just emit tool-approval-request targeting the same toolCallId
 
             pending[project_dir] = {
                 "generator": gen,
@@ -203,17 +220,22 @@ async def sse_claude_loop(query, project_dir, end_resp, watcher, resume=False):
                     "text_id": text_id,
                     "msg_id": msg_id,
                 },
-                "tool_name": event.get("name", ""),
-                "tool_input": event.get("input", {}),
+                "tool_name": tool_name,
+                "tool_input": tool_input,
                 "tool_id": tool_call_id,
                 "approval_id": approval_id,
             }
-            # Emit native tool-approval-request so frontend sees approval state
+
+            # NOW emit approval request — SDK can find the tool invocation
             yield sse({
                 "type": "tool-approval-request",
                 "approvalId": approval_id,
                 "toolCallId": tool_call_id,
             })
+            # Must close step + finish so SDK considers message complete
+            # (sendAutomaticallyWhen won't fire on an incomplete message)
+            yield sse({"type": "finish-step"})
+            yield sse({"type": "finish", "finishReason": "stop"})
             yield "data: [DONE]\n\n"
             return
 
@@ -356,6 +378,23 @@ async def chat(request: Request):
     endpoint = data.get("endpoint", "LiteLLM")
     messages = data.get("messages", [])
 
+    # ── Resume pending approval (SDK re-submits here after addToolApprovalResponse) ──
+    if project_dir in pending:
+        print(f"[chat] resuming pending approval for {project_dir}")
+        redis_state = RedisStateManager()
+        redis_state.set_streaming_state(project_dir, True)
+        return StreamingResponse(
+            sse_claude_loop(
+                query="",
+                project_dir=project_dir,
+                end_resp=endpoint,
+                watcher=watchers.get(project_dir),
+                resume=True,
+            ),
+            media_type="text/event-stream",
+            headers=SSE_HEADERS,
+        )
+
     # useChat sends full message history as UIMessage[] (with parts[]).
     # We only need the latest user message text.
     # claude_loop manages its own message history via msg_store.
@@ -374,6 +413,7 @@ async def chat(request: Request):
                 latest_message = content
 
     if not latest_message:
+        print(f"[chat] no text content, returning DONE")
         return StreamingResponse(
             iter(["data: [DONE]\n\n"]),
             media_type="text/event-stream",
@@ -392,6 +432,7 @@ async def chat(request: Request):
     redis_state = RedisStateManager()
     redis_state.set_streaming_state(project_dir, True)
 
+    print(f"[chat] new query for {project_dir}: {latest_message[:80]}...")
     return StreamingResponse(
         sse_claude_loop(
             query=latest_message,
@@ -404,36 +445,11 @@ async def chat(request: Request):
     )
 
 
-# ─── Approval Flow ────────────────────────────────────────────────
-
-@app.post("/api/chat/approve")
-async def approve_tool(request: Request):
-    """Resume a paused generator after human approves a tool call."""
-    data = await request.json()
-    project_dir = data.get("project_dir", "")
-
-    if project_dir not in pending:
-        return {"status": "error", "message": "no pending approval for this project"}
-
-    redis_state = RedisStateManager()
-    redis_state.set_streaming_state(project_dir, True)
-
-    return StreamingResponse(
-        sse_claude_loop(
-            query="",
-            project_dir=project_dir,
-            end_resp="",
-            watcher=None,
-            resume=True,
-        ),
-        media_type="text/event-stream",
-        headers=SSE_HEADERS,
-    )
-
+# ─── Deny ─────────────────────────────────────────────────────────
 
 @app.post("/api/chat/deny")
 async def deny_tool(request: Request):
-    """Reject a pending tool call — emits tool-output-denied, then cleans up generator."""
+    """Reject a pending tool call — cleans up the paused generator."""
     data = await request.json()
     project_dir = data.get("project_dir", "")
 
@@ -463,20 +479,6 @@ async def deny_tool(request: Request):
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )
-
-
-@app.get("/api/chat/pending")
-async def get_pending(project_dir: str = ""):
-    """Check if there's a pending approval for a project."""
-    if project_dir in pending:
-        p = pending[project_dir]
-        return {
-            "pending": True,
-            "tool_name": p.get("tool_name", ""),
-            "tool_input": str(p.get("tool_input", {})),
-            "tool_id": p.get("tool_id", ""),
-        }
-    return {"pending": False}
 
 
 # ─── Stop / Clear ─────────────────────────────────────────────────

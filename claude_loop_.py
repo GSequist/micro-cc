@@ -269,6 +269,7 @@ make_plan, update_step, show_full_plan, add_step
                         approval = {"approved": None}
                         yield {
                             "type": "approval_request",
+                            "id": tool_use_block.id,
                             "name": tool_use_block.name,
                             "input": tool_use_block.input,
                             "approval": approval

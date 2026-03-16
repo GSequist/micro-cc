@@ -150,3 +150,16 @@ class RedisStateManager:
             self._delete(key)
         except Exception as e:
             print(f"State error in clear_discovered_mcps: {e}")
+
+    ########################## streaming state
+
+    def set_streaming_state(self, project_dir: str, active: bool) -> None:
+        key = self._make_key("streaming", project_dir)
+        if active:
+            self._set_with_ttl(key, True, 600)
+        else:
+            self._delete(key)
+
+    def get_streaming_state(self, project_dir: str) -> bool:
+        key = self._make_key("streaming", project_dir)
+        return bool(self._get(key))
