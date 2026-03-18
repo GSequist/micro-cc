@@ -84,9 +84,17 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
 
             elif etype == "tool_result":
                 name = event.get("name", "?")
-                output = event.get("output", "")[:2000]
-                console.print(Markdown(f"  ✓ `{name}`: {output}..."))
-                console.print("  ─────────────────────────────────────")
+                output = event.get("output", "")
+                # Dangerous/mutating tools — show full output with markdown
+                if name in ("bash_tool", "write_", "edit_"):
+                    console.print(f"  ✓ [bold]{name}[/bold]")
+                    if output.strip():
+                        console.print(Markdown(f"```\n{output[:3000]}\n```"))
+                    console.print("  ─────────────────────────────────────")
+                else:
+                    # Read-only tools — compact one-liner
+                    short = output.replace("\n", " ").strip()[:120]
+                    console.print(f"  ✓ [dim]{name}[/dim] {short}")
 
             elif etype == "final_text":
                 pass  # signal only — text already rendered via deltas
