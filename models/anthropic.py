@@ -175,7 +175,7 @@ async def a_model_call(
 
     if thinking and model != "claude-haiku-4-5-20251001":
         api_parameters["thinking"] = {"type": "adaptive"}
-        api_parameters["output_config"] = {"effort": "medium"}
+        api_parameters["output_config"] = {"effort": "high"}
         api_parameters["max_tokens"] = max_tokens
     else:
         api_parameters["max_tokens"] = max_tokens

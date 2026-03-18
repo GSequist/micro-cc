@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import signal
 import sys
 from claude_loop_ import claude_loop
 from prompt_toolkit import PromptSession
@@ -18,82 +19,90 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
     _live = None
     _thinking_started = False
 
-    async for event in claude_loop(
-        query=query, project_dir=project_dir, end_resp=end_resp, watcher=watcher
-    ):
-        etype = event.get("type")
+    try:
+        async for event in claude_loop(
+            query=query, project_dir=project_dir, end_resp=end_resp, watcher=watcher
+        ):
+            etype = event.get("type")
 
-        # Stop live display when transitioning away from text deltas
-        if _live and etype != "text_delta":
-            _live.stop()
-            _live = None
-            _stream_text = ""
+            # Stop live display when transitioning away from text deltas
+            if _live and etype != "text_delta":
+                _live.stop()
+                _live = None
+                _stream_text = ""
 
-        # End thinking line when transitioning away
-        if _thinking_started and etype != "thinking_delta":
-            print()
-            _thinking_started = False
+            # End thinking line when transitioning away
+            if _thinking_started and etype != "thinking_delta":
+                print()
+                _thinking_started = False
 
-        if etype == "status":
-            console.print(f"  ⋯ {event.get('message', '')}")
+            if etype == "status":
+                console.print(f"  ⋯ {event.get('message', '')}")
 
-        elif etype == "approval_request":
-            name = event.get("name", "")
-            inp = event.get("input", {})
-            approval = event.get("approval", None)
+            elif etype == "approval_request":
+                name = event.get("name", "")
+                inp = event.get("input", {})
+                approval = event.get("approval", None)
 
-            console.print(f"\n ⚠️  {name}: {inp}")
+                console.print(f"\n ⚠️  {name}: {inp}")
 
-            approval_session = PromptSession()
-            response = (
-                (await approval_session.prompt_async("  Execute? [Y/n]: "))
-                .strip()
-                .lower()
-            )
-
-            if response in ("", "yes", "y"):
-                approval["approved"] = True
-            else:
-                approval["approved"] = False
-                console.print("  ⊘ cancelled")
-
-        elif etype == "cancelled":
-            console.print("  ⊘ cancelled · conversation saved")
-
-        elif etype == "thinking_delta":
-            if not _thinking_started:
-                print("  💭 ", end="", flush=True)
-                _thinking_started = True
-            print(event.get("content", ""), end="", flush=True)
-
-        elif etype == "text_delta":
-            _stream_text += event.get("content", "")
-            if _live is None:
-                _live = Live(
-                    Markdown(_stream_text), console=console, refresh_per_second=10
+                approval_session = PromptSession()
+                response = (
+                    (await approval_session.prompt_async("  Execute? [Y/n]: "))
+                    .strip()
+                    .lower()
                 )
-                _live.start()
-            else:
-                _live.update(Markdown(_stream_text))
 
-        elif etype == "tool_call":
-            name = event.get("name", "?")
-            console.print(Markdown(f"  🔧 `{name}`"))
+                if response in ("", "yes", "y"):
+                    approval["approved"] = True
+                else:
+                    approval["approved"] = False
+                    console.print("  ⊘ cancelled")
 
-        elif etype == "tool_result":
-            name = event.get("name", "?")
-            output = event.get("output", "")[:2000]
-            console.print(Markdown(f"  ✓ `{name}`: {output}..."))
-            console.print("  ─────────────────────────────────────")
+            elif etype == "cancelled":
+                console.print("  ⊘ cancelled · conversation saved")
 
-        elif etype == "final_text":
-            pass  # signal only — text already rendered via deltas
+            elif etype == "thinking_delta":
+                if not _thinking_started:
+                    print("  💭 ", end="", flush=True)
+                    _thinking_started = True
+                print(event.get("content", ""), end="", flush=True)
 
-        elif etype == "error":
-            console.print(Markdown(f"\n⚠️  {event.get('message', 'Unknown error')}\n"))
+            elif etype == "text_delta":
+                _stream_text += event.get("content", "")
+                if _live is None:
+                    _live = Live(
+                        Markdown(_stream_text), console=console, refresh_per_second=10
+                    )
+                    _live.start()
+                else:
+                    _live.update(Markdown(_stream_text))
 
-        elif etype == "done":
-            pass
+            elif etype == "tool_call":
+                name = event.get("name", "?")
+                console.print(Markdown(f"  🔧 `{name}`"))
+
+            elif etype == "tool_result":
+                name = event.get("name", "?")
+                output = event.get("output", "")[:2000]
+                console.print(Markdown(f"  ✓ `{name}`: {output}..."))
+                console.print("  ─────────────────────────────────────")
+
+            elif etype == "final_text":
+                pass  # signal only — text already rendered via deltas
+
+            elif etype == "error":
+                console.print(Markdown(f"\n⚠️  {event.get('message', 'Unknown error')}\n"))
+
+            elif etype == "done":
+                pass
+    finally:
+        # Always clean up Live display — left active it hijacks the terminal
+        if _live:
+            try:
+                _live.stop()
+            except Exception:
+                pass
 
 
 def print_banner(console):
@@ -280,13 +289,23 @@ async def start_():
 
             console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+            # Run as a task so SIGINT can cleanly cancel it
+            task = asyncio.create_task(
+                consumeloop(query, project_dir, endp_resp, console, watcher)
+            )
+
+            loop = asyncio.get_running_loop()
+            loop.add_signal_handler(signal.SIGINT, task.cancel)
+
             try:
-                await consumeloop(query, project_dir, endp_resp, console, watcher)
+                await task
             except asyncio.CancelledError:
                 console.print("\n  ⊘ interrupted")
+            finally:
+                loop.remove_signal_handler(signal.SIGINT)
 
         except KeyboardInterrupt:
-            console.print("\n[interrupted]")
+            # Ctrl+C while at the prompt — just redraw
             continue
         except EOFError:
             watcher.stop()

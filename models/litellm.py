@@ -322,7 +322,7 @@ async def l_model_call(
     }
 
     if thinking:
-        api_params["reasoning_effort"] = "medium"
+        api_params["reasoning_effort"] = "high"
 
     if tools:
         openai_tools = _tools_to_openai(tools)
