@@ -239,7 +239,7 @@ async def _call_haiku_summary(prev_summary: str, messages_text: str, endpoint: s
             tokens = tokenizer.encode(summary)
             if len(tokens) > 2000:
                 summary = tokenizer.decode(tokens[:2000])
-            print(f"adding summary to store {summary}\n")
+            # print(f"adding summary to store {summary}\n")
             return summary
     except Exception as e:
         print(f"[summarize] Haiku call failed: {e}")
