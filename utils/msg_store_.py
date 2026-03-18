@@ -6,7 +6,7 @@ from pathlib import Path
 from utils.helpers import tokenizer
 
 
-MAX_MSGS_BEFORE_SUMMARY = 2
+MAX_MSGS_BEFORE_SUMMARY = 10
 MAX_SUMMARY_INPUT_TOKENS = 30000
 
 
@@ -222,7 +222,7 @@ async def _call_haiku_summary(prev_summary: str, messages_text: str, endpoint: s
             from models.litellm import l_model_call
             resp = await l_model_call(
                 input=prompt,
-                model="bedrock.anthropic.claude-haiku-4-5-20251001",
+                model="bedrock.anthropic.claude-haiku-4-5",
                 max_tokens=2048,
             )
         else:
