@@ -276,9 +276,10 @@ async def start_():
                 break
 
             if query.lower() == "/clear":
-                from utils.msg_store_ import erase_msgs
+                from utils.msg_store_ import erase_msgs, erase_summary
 
                 erase_msgs(project_dir)
+                erase_summary(project_dir)
                 _paste_store.clear()
                 _paste_id[0] = 0
                 console.clear()

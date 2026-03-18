@@ -3,6 +3,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from utils.helpers import tokenizer
+
+
+MAX_MSGS_BEFORE_SUMMARY = 2
+MAX_SUMMARY_INPUT_TOKENS = 30000
 
 
 def _get_storage_dir(project_dir: str) -> Path:
@@ -136,3 +141,128 @@ def _reconstruct_message(normalized: dict) -> dict:
         "role": normalized["role"],
         "content": normalized.get("content", "")
     }
+
+
+# ---------------------------------------------------------------------------
+# Conversation summary (sliding window)
+# ---------------------------------------------------------------------------
+
+def load_summary(project_dir: str) -> str:
+    """Load conversation summary if it exists."""
+    storage_dir = _get_storage_dir(project_dir)
+    summary_path = storage_dir / "summary.json"
+    if not summary_path.exists():
+        return ""
+    try:
+        data = json.loads(summary_path.read_text())
+        return data.get("content", "")
+    except (json.JSONDecodeError, KeyError):
+        return ""
+
+
+def _store_summary(project_dir: str, summary: str) -> None:
+    """Persist conversation summary."""
+    storage_dir = _get_storage_dir(project_dir)
+    summary_path = storage_dir / "summary.json"
+    summary_path.write_text(json.dumps({
+        "content": summary,
+        "ts": datetime.datetime.now().isoformat(),
+    }))
+
+
+def erase_summary(project_dir: str) -> None:
+    """Delete conversation summary."""
+    storage_dir = _get_storage_dir(project_dir)
+    summary_path = storage_dir / "summary.json"
+    if summary_path.exists():
+        summary_path.unlink()
+
+
+def _extract_excess_text(msgs: list) -> str:
+    """Filter user/assistant string content from excess msgs, reversed, capped by tokens."""
+    parts = []
+    total_tokens = 0
+
+    for msg in reversed(msgs):
+        role = msg.get("role", "?")
+        content = msg.get("content", "")
+        if not isinstance(content, str) or role not in ("user", "assistant"):
+            continue
+
+        line = f"{role}: {content}"
+        line_tokens = len(tokenizer.encode(line))
+        if total_tokens + line_tokens > MAX_SUMMARY_INPUT_TOKENS:
+            break
+
+        parts.append(line)
+        total_tokens += line_tokens
+
+    parts.reverse()
+    return "\n".join(parts)
+
+
+async def _call_haiku_summary(prev_summary: str, messages_text: str, endpoint: str) -> str:
+    """Call Haiku to produce/enrich conversation summary."""
+    prompt = (
+        "You are a precise summarization assistant. Progressively summarize "
+        "conversation history while maintaining critical context.\n\n"
+        "INSTRUCTIONS:\n"
+        "1. Build upon the previous summary by incorporating new information chronologically\n"
+        "2. Preserve: file paths, function names, key decisions, errors, code changes\n"
+        "3. Keep temporal sequence of events\n"
+        "4. IMPORTANT: Your summary MUST be under 2000 tokens. Be concise but complete.\n"
+        "5. If new content adds nothing, return previous summary unchanged.\n\n"
+    )
+    if prev_summary:
+        prompt += f"Current summary:\n{prev_summary}\n\n"
+    prompt += f"New messages:\n{messages_text}\n\nNew summary:"
+
+    try:
+        if endpoint == "LiteLLM":
+            from models.litellm import l_model_call
+            resp = await l_model_call(
+                input=prompt,
+                model="bedrock.anthropic.claude-haiku-4-5-20251001",
+                max_tokens=2048,
+            )
+        else:
+            from models.anthropic import a_model_call
+            resp = await a_model_call(
+                input=prompt,
+                model="claude-4.5-haiku",
+                max_tokens=2048,
+            )
+
+        if resp and resp.content:
+            summary = resp.content[0].text
+            # Hard cap: truncate if Haiku exceeded token limit
+            tokens = tokenizer.encode(summary)
+            if len(tokens) > 2000:
+                summary = tokenizer.decode(tokens[:2000])
+            print(f"adding summary to store {summary}\n")
+            return summary
+    except Exception as e:
+        print(f"[summarize] Haiku call failed: {e}")
+
+    return prev_summary or ""
+
+
+async def summarize_and_trim(project_dir: str, msgs: list, endpoint: str) -> None:
+    """Sliding window: summarize excess messages into summary.json. Does NOT touch msgs."""
+    # Skip system messages
+    non_system = [m for m in msgs if m.get("role") != "system"]
+
+    if len(non_system) <= MAX_MSGS_BEFORE_SUMMARY:
+        return
+
+    excess_count = len(non_system) - MAX_MSGS_BEFORE_SUMMARY
+    to_summarize = non_system[:excess_count]
+
+    # Filter to user/assistant text, reversed, capped by token window
+    messages_text = _extract_excess_text(to_summarize)
+    if not messages_text.strip():
+        return
+
+    prev_summary = load_summary(project_dir)
+    new_summary = await _call_haiku_summary(prev_summary, messages_text, endpoint)
+    _store_summary(project_dir, new_summary)

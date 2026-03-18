@@ -23,7 +23,7 @@ from tools.search_tool_ import (
     get_mcp_server,
     get_mcp_toolset,
 )
-from utils.msg_store_ import store_msgs, load_msgs
+from utils.msg_store_ import store_msgs, load_msgs, load_summary, summarize_and_trim
 from utils.tokenization import token_cutter
 from utils.helpers import tokenizer
 from utils.claude_md_loader import load_claude_md_file
@@ -156,6 +156,11 @@ make_plan, update_step, show_full_plan, add_step
         proc_info = process_status()
         if proc_info:
             reminders.append(proc_info)
+
+        # Inject conversation summary from sliding window
+        conversation_summary = load_summary(project_dir)
+        if conversation_summary:
+            reminders.append(f"<conversation-summary>\n{conversation_summary}\n</conversation-summary>")
 
         plan_data = redis_state.get_plan(project_dir)
         if plan_data:
@@ -359,6 +364,8 @@ make_plan, update_step, show_full_plan, add_step
             if not tool_use_blocks and text_block:
                 msgs.append({"role": "assistant", "content": text_block.text})
                 store_msgs(project_dir, msgs)
+                # Sliding window: summarize excess into separate summary.json
+                await summarize_and_trim(project_dir, msgs, end_resp)
                 yield {"type": "final_text"}
                 break
 
