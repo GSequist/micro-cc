@@ -69,11 +69,17 @@ async def browser(code: str, *, project_dir: str, end_resp: str = "Anthropic") -
     except Exception as e:
         return f"{exec_output}\n[Screenshot failed: {e}]".strip()
 
-    # Vision the screenshot
+    # Annotate screenshot with interactive element bounding boxes
+    from utils.annotate_ import annotate_screenshot
+    elements = await _get_browser_elements(page, screenshot_path)
+    element_index = annotate_screenshot(screenshot_path, elements)
+
+    # Vision the annotated screenshot
     from tools.vision_tools_ import vision
+    prompt = "Describe this browser page. Numbered red boxes mark interactive elements."
     description = await vision(
         screenshot_path,
-        "Describe what you see on this browser page. Note key UI elements, text content, forms, buttons, errors, and layout.",
+        prompt,
         project_dir=project_dir,
         end_resp=end_resp,
     )
@@ -82,6 +88,67 @@ async def browser(code: str, *, project_dir: str, end_resp: str = "Anthropic") -
     if exec_output:
         parts.append(f"Output: {exec_output}")
     parts.append(f"Screenshot: {screenshot_path}")
+    if element_index:
+        parts.append(f"Interactive elements:\n{element_index}")
+        parts.append("IMPORTANT: To click any element, use ONLY the coordinates from the list above. "
+                      "Example: await page.mouse.click(cx, cy). NEVER estimate coordinates visually — "
+                      "vision cannot determine screen coordinates. The element list is authoritative.")
     parts.append(f"Page: {description}")
 
     return "\n".join(parts)
+
+
+async def _get_browser_elements(page, screenshot_path: str) -> list[dict]:
+    """Extract interactive elements from the page with bounding rects, scaled for Retina."""
+    try:
+        from PIL import Image
+
+        # Determine scale factor: screenshot pixels vs viewport
+        img = Image.open(screenshot_path)
+        img_w, _ = img.size
+        viewport = page.viewport_size
+        scale = img_w / viewport["width"] if viewport else 1.0
+
+        raw = await page.evaluate("""() => {
+            const sels = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="menuitem"], [onclick]';
+            const els = [...document.querySelectorAll(sels)];
+            return els.map(el => {
+                const r = el.getBoundingClientRect();
+                const label = el.textContent?.trim()?.slice(0, 80)
+                    || el.getAttribute('aria-label')
+                    || el.getAttribute('placeholder')
+                    || el.getAttribute('title')
+                    || '';
+                const tag = el.tagName.toLowerCase()
+                    + (el.type ? '[' + el.type + ']' : '')
+                    + (el.getAttribute('role') ? '[role=' + el.getAttribute('role') + ']' : '');
+                return { x: r.x, y: r.y, width: r.width, height: r.height, label, tag };
+            });
+        }""")
+
+        # Filter zero-size / offscreen, cap at 50
+        elements = []
+        for el in raw:
+            if el["width"] < 2 or el["height"] < 2:
+                continue
+            if el["x"] + el["width"] < 0 or el["y"] + el["height"] < 0:
+                continue
+            # Store viewport-coord click target (for page.mouse.click)
+            el["click_x"] = el["x"] + el["width"] / 2
+            el["click_y"] = el["y"] + el["height"] / 2
+            # Scale to screenshot pixels for box drawing
+            el["x"] = el["x"] * scale
+            el["y"] = el["y"] * scale
+            el["width"] = el["width"] * scale
+            el["height"] = el["height"] * scale
+            elements.append(el)
+            if len(elements) >= 50:
+                break
+
+        # Assign indices
+        for i, el in enumerate(elements, 1):
+            el["index"] = i
+
+        return elements
+    except Exception:
+        return []

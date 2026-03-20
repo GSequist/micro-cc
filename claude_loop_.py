@@ -31,7 +31,7 @@ from utils.claude_md_loader import load_claude_md_file
 
 load_dotenv()
 
-DANGEROUS_TOOLS = {"bash_", "edit_", "write_", "computer"}
+DANGEROUS_TOOLS = {"bash_", "edit_", "write_"}
 
 
 async def claude_loop(

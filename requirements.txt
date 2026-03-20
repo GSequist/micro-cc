@@ -33,6 +33,7 @@ pathvalidate==3.3.1
 pdfminer.six==20260107
 pillow==12.1.0
 playwright==1.58.0
+pyobjc-framework-ApplicationServices==12.1
 prompt_toolkit==3.0.52
 pyautogui==0.9.54
 puremagic==1.30
