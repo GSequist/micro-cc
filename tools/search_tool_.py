@@ -5,6 +5,7 @@ import numpy as np
 # Import all discoverable tools
 from tools.vision_tools_ import vision
 from tools.browser_tool_ import browser
+from tools.computer_tool_ import computer
 from tools.web_tools_ import (
     visit_url,
     web_search,
@@ -60,6 +61,7 @@ def _register(func, search_text: str):
 
 _register(vision, "analyze image vision see picture screenshot OCR read image")
 _register(browser, "browser chrome playwright navigate click type web automation interact page form")
+_register(computer, "computer desktop mac mouse keyboard click type screenshot control pyautogui")
 
 # Web research tools - full suite for autonomous web research
 _register(

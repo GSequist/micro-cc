@@ -291,9 +291,10 @@ async def start_():
                 erase_msgs(project_dir)
                 erase_summary(project_dir)
                 await close_browser()
-                ss_dir = os.path.join(project_dir, ".browser_screenshots")
-                if os.path.isdir(ss_dir):
-                    shutil.rmtree(ss_dir)
+                for ss_folder in (".browser_screenshots", ".computer_screenshots"):
+                    ss_dir = os.path.join(project_dir, ss_folder)
+                    if os.path.isdir(ss_dir):
+                        shutil.rmtree(ss_dir)
                 _paste_store.clear()
                 _paste_id[0] = 0
                 console.clear()
