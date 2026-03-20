@@ -163,3 +163,4 @@ oauth.py
 CLAUDE.md
 ARCHITECTURE.md
 /projects
+.claude/
