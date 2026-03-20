@@ -285,9 +285,15 @@ async def start_():
 
             if query.lower() == "/clear":
                 from utils.msg_store_ import erase_msgs, erase_summary
+                from tools.browser_tool_ import close_browser
+                import shutil
 
                 erase_msgs(project_dir)
                 erase_summary(project_dir)
+                await close_browser()
+                ss_dir = os.path.join(project_dir, ".browser_screenshots")
+                if os.path.isdir(ss_dir):
+                    shutil.rmtree(ss_dir)
                 _paste_store.clear()
                 _paste_id[0] = 0
                 console.clear()
