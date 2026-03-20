@@ -82,12 +82,8 @@ async def computer(code: str, *, project_dir: str, end_resp: str = "Anthropic") 
     return "\n".join(parts)
 
 
-# Roles that are containers/layout — have AXPress but aren't useful targets
-_SKIP_ROLES = {
-    "AXWindow", "AXApplication", "AXGroup", "AXScrollArea", "AXSplitGroup",
-    "AXSplitter", "AXToolbar", "AXTabGroup", "AXLayoutArea", "AXLayoutItem",
-    "AXWebArea", "AXScrollBar", "AXMenu", "AXMenuBar", "AXMenuBarItem",
-}
+# Pure structural containers — have actions but clicking them is meaningless
+_SKIP_ROLES = {"AXWindow", "AXApplication", "AXScrollArea", "AXSplitGroup", "AXSplitter"}
 # Window chrome subroles — always skip
 _CHROME_SUBROLES = {"AXCloseButton", "AXMinimizeButton", "AXZoomButton", "AXFullScreenButton"}
 # Text inputs don't have AXPress but are interactive
@@ -95,12 +91,11 @@ _INPUT_ROLES = {"AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"}
 
 
 def _get_ax_elements() -> list[dict]:
-    """Extract interactive elements from all visible apps via macOS Accessibility API.
+    """Extract ALL interactive elements from all visible apps via macOS Accessibility API.
 
-    Uses AXPress/AXConfirm/AXPick action detection instead of role allowlisting,
-    so any clickable element is captured regardless of its role name.
-    Traverses up to depth 15 to reach elements inside Electron/web apps.
-    Filters out window chrome (close/min/zoom) and container roles.
+    Traverses to depth 30 to reach web content inside Chrome/Electron (Outlook lives at depth 20+).
+    Collects everything with any action, then ranks for the annotated screenshot (top 50 drawn).
+    All elements stored in element_map for Claude to reference.
     """
     try:
         from ApplicationServices import (
@@ -131,11 +126,10 @@ def _get_ax_elements() -> list[dict]:
                 seen_pids.add(pid)
                 pids.append(pid)
 
-        # First pass: collect up to 200 candidates (no tight cap yet)
         candidates = []
 
         def _traverse(el, depth=0):
-            if depth > 25 or len(candidates) >= 200:
+            if depth > 30 or len(candidates) >= 1000:
                 return
 
             err, role = AXUIElementCopyAttributeValue(el, "AXRole", None)
@@ -146,8 +140,7 @@ def _get_ax_elements() -> list[dict]:
             if err_sr == 0 and subrole in _CHROME_SUBROLES:
                 return
 
-            # Detect interactivity: any element with actions (AXPress, AXConfirm, AXPick,
-            # AXShowMenu, AXScrollToVisible) — web content uses ShowMenu not Press
+            # Any element with any action, or text inputs
             err_a, actions = AXUIElementCopyActionNames(el, None)
             has_action = err_a == 0 and actions and len(actions) > 0
             is_input = role in _INPUT_ROLES
@@ -159,10 +152,8 @@ def _get_ax_elements() -> list[dict]:
                     ok_p, point = AXValueGetValue(pos_ref, kAXValueCGPointType, None)
                     ok_s, size = AXValueGetValue(size_ref, kAXValueCGSizeType, None)
                     if ok_p and ok_s:
-                        # Scaled coords for drawing on Retina screenshot
                         x, y = point.x * scale, point.y * scale
                         w, h = size.width * scale, size.height * scale
-                        # Filter: on-screen, minimum size, sane aspect ratio
                         aspect = max(w, h) / min(w, h) if min(w, h) > 0 else 999
                         if (w >= 4 and h >= 4 and x >= 0 and y >= 0
                                 and h < 10000 and aspect < 30):
@@ -172,7 +163,6 @@ def _get_ax_elements() -> list[dict]:
                                 if err_l == 0 and val and isinstance(val, str) and val.strip():
                                     label = val.strip()[:80]
                                     break
-                            # click_x/click_y = unscaled point coords for pyautogui
                             candidates.append({
                                 "x": x, "y": y, "width": w, "height": h,
                                 "click_x": point.x + size.width / 2,
@@ -185,12 +175,12 @@ def _get_ax_elements() -> list[dict]:
             err_c, children = AXUIElementCopyAttributeValue(el, "AXChildren", None)
             if err_c == 0 and children:
                 for child in children:
-                    if len(candidates) >= 200:
+                    if len(candidates) >= 1000:
                         break
                     _traverse(child, depth + 1)
 
         for pid in pids:
-            if len(candidates) >= 200:
+            if len(candidates) >= 1000:
                 break
             try:
                 app_ref = AXUIElementCreateApplication(pid)
@@ -198,8 +188,7 @@ def _get_ax_elements() -> list[dict]:
             except Exception:
                 continue
 
-        # Second pass: rank and take best 50
-        # Score: labeled > unlabeled, inputs high, deeper = content not chrome,
+        # Rank: labeled > unlabeled, inputs high, deeper = content not chrome,
         #        "Close"/"Close Tab" deprioritized
         def _score(el):
             s = 0
@@ -209,18 +198,30 @@ def _get_ax_elements() -> list[dict]:
                 s -= 20
             if el["tag"] in _INPUT_ROLES:
                 s += 15
-            # Deeper elements are more likely to be content, not chrome
             s += min(el["_depth"], 10)
             return s
 
         candidates.sort(key=_score, reverse=True)
-        elements = candidates[:50]
 
-        # Clean up internal field, assign indices
-        for i, el in enumerate(elements, 1):
+        # Dedup: if two elements have click centers within 8px, keep the higher-scored one
+        deduped = []
+        seen_coords = []  # list of (cx, cy)
+        for el in candidates:
+            cx = el.get("click_x", el["x"] + el["width"] / 2)
+            cy = el.get("click_y", el["y"] + el["height"] / 2)
+            too_close = False
+            for sx, sy in seen_coords:
+                if abs(cx - sx) < 8 and abs(cy - sy) < 8:
+                    too_close = True
+                    break
+            if not too_close:
+                seen_coords.append((cx, cy))
+                deduped.append(el)
+
+        for i, el in enumerate(deduped, 1):
             el.pop("_depth", None)
             el["index"] = i
 
-        return elements
+        return deduped
     except Exception:
         return []

@@ -6,6 +6,7 @@ _BOX_COLOR = (255, 0, 0)
 _BOX_WIDTH = 3
 _BADGE_BG = (255, 0, 0, 230)
 _BADGE_TEXT_COLOR = (255, 255, 255)
+_MAX_DRAWN = 50  # max boxes on screenshot (readability)
 
 # Stored element map — overwritten on each annotate_screenshot() call.
 # Maps element number → {click_x, click_y, label, tag}
@@ -20,42 +21,44 @@ def _load_font(size=_FONT_SIZE):
 
 
 def annotate_screenshot(img_path: str, elements: list[dict]) -> str:
-    """Draw numbered bounding boxes on a screenshot and store element→coords mapping.
+    """Draw numbered bounding boxes on a screenshot and store ALL elements in element_map.
+
+    - Top 50 elements get red boxes drawn on the screenshot
+    - ALL elements stored in element_map with native click coordinates
+    - ALL elements included in the returned text index
 
     Each element dict must have: x, y, width, height, label, tag
-    Optional: click_x, click_y (native coords for clicking — if omitted, center of box is used)
-
-    Overwrites the PNG in-place. Overwrites element_map with fresh mapping.
-    Returns formatted element index string with click coordinates.
+    Optional: click_x, click_y (native coords — if omitted, center of box used)
     """
     element_map.clear()
 
     if not elements:
         return ""
 
-    img = Image.open(img_path).convert("RGBA")
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    font = _load_font()
-
+    # Store ALL elements in map
     for i, el in enumerate(elements, 1):
         idx = el.get("index", i)
-        x, y, w, h = el["x"], el["y"], el["width"], el["height"]
-
-        # Native click coords (logical/viewport), falling back to box center
-        cx = el.get("click_x", x + w / 2)
-        cy = el.get("click_y", y + h / 2)
-
-        # Store mapping
+        cx = el.get("click_x", el["x"] + el["width"] / 2)
+        cy = el.get("click_y", el["y"] + el["height"] / 2)
         element_map[idx] = {
             "click_x": cx, "click_y": cy,
             "label": el.get("label", ""), "tag": el.get("tag", ""),
         }
 
-        # Red rectangle
+    # Draw boxes on screenshot for top N only
+    draw_elements = elements[:_MAX_DRAWN]
+
+    img = Image.open(img_path).convert("RGBA")
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    font = _load_font()
+
+    for el in draw_elements:
+        idx = el.get("index", 0)
+        x, y, w, h = el["x"], el["y"], el["width"], el["height"]
+
         draw.rectangle([x, y, x + w, y + h], outline=_BOX_COLOR, width=_BOX_WIDTH)
 
-        # Numbered badge
         badge_text = str(idx)
         bbox = font.getbbox(badge_text)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -69,6 +72,7 @@ def annotate_screenshot(img_path: str, elements: list[dict]) -> str:
     img = Image.alpha_composite(img, overlay)
     img.convert("RGB").save(img_path)
 
+    # Return text index for ALL elements
     return _format_index(elements)
 
 
