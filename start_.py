@@ -14,15 +14,17 @@ from rich.live import Live
 from utils.file_watcher_ import FileWatcher
 
 
-async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatcher):
+async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatcher, cancel_event: asyncio.Event = None):
     _stream_text = ""
     _live = None
     _thinking_started = False
 
     try:
         async for event in claude_loop(
-            query=query, project_dir=project_dir, end_resp=end_resp, watcher=watcher
+            query=query, project_dir=project_dir, end_resp=end_resp, watcher=watcher, cancel_event=cancel_event
         ):
+            if cancel_event and cancel_event.is_set():
+                break
             etype = event.get("type")
 
             # Stop live display when transitioning away from text deltas
@@ -306,12 +308,18 @@ async def start_():
             console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
             # Run as a task so SIGINT can cleanly cancel it
+            cancel_event = asyncio.Event()
             task = asyncio.create_task(
-                consumeloop(query, project_dir, endp_resp, console, watcher)
+                consumeloop(query, project_dir, endp_resp, console, watcher, cancel_event)
             )
 
             loop = asyncio.get_running_loop()
-            loop.add_signal_handler(signal.SIGINT, task.cancel)
+
+            def _handle_sigint():
+                cancel_event.set()
+                task.cancel()
+
+            loop.add_signal_handler(signal.SIGINT, _handle_sigint)
 
             try:
                 await task

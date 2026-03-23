@@ -24,7 +24,7 @@ from tools.search_tool_ import (
     get_mcp_toolset,
 )
 from utils.msg_store_ import store_msgs, load_msgs, load_summary, summarize_and_trim
-from utils.tokenization import token_cutter
+from utils.tokenization_simple import token_cutter
 from utils.helpers import tokenizer
 from utils.claude_md_loader import load_claude_md_file
 
@@ -39,7 +39,8 @@ async def claude_loop(
     *,
     project_dir,
     end_resp,
-    watcher=None
+    watcher=None,
+    cancel_event=None
 ):
     """micro cc"""
 
@@ -142,6 +143,10 @@ make_plan, update_step, show_full_plan, add_step
     store_msgs(project_dir, msgs)
 
     while True:
+        # Check cancellation at top of each iteration
+        if cancel_event and cancel_event.is_set():
+            break
+
         # Build system reminders
         reminders = []
 
@@ -203,12 +208,17 @@ make_plan, update_step, show_full_plan, add_step
 
             response = None
             async for event in stream:
+                if cancel_event and cancel_event.is_set():
+                    break
                 if event["type"] == "text_delta":
                     yield {"type": "text_delta", "content": event["text"]}
                 elif event["type"] == "thinking_delta":
                     yield {"type": "thinking_delta", "content": event["thinking"]}
                 elif event["type"] == "response":
                     response = event["response"]
+
+            if cancel_event and cancel_event.is_set():
+                break
 
             if response is None:
                 yield {"type": "error", "message": "model call failed after retries"}
@@ -286,6 +296,9 @@ make_plan, update_step, show_full_plan, add_step
                                 "type": "cancelled"
                             }
                             return
+
+                if cancel_event and cancel_event.is_set():
+                    break
 
                 tool_tasks = [
                     execute_tool_call(
@@ -374,6 +387,8 @@ make_plan, update_step, show_full_plan, add_step
                 yield {"type": "final_text"}
                 break
 
+        except asyncio.CancelledError:
+            break  # Propagate cancellation cleanly
         except Exception as e:
             yield {
                 "type": "error",
