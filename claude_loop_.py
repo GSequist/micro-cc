@@ -15,7 +15,7 @@ from skills.skill_loader import get_skill_summary
 from tools.bash_tool import bash_
 from tools.file_tools_ import read_, write_, edit_, glob_, grep_
 from tools.search_tool_ import search_tools
-from tools.plan_tools_ import make_plan, update_step, add_step, show_full_plan, get_contextual_plan_reminder
+from tools.plan_tools_ import make_plan, update_step, add_step, show_full_plan, get_contextual_plan_reminder, get_post_tool_plan_reminder
 from tools.skill_tools_ import read_skill, list_skills
 from tools.search_tool_ import (
     get_tool_schema,
@@ -147,41 +147,37 @@ make_plan, update_step, show_full_plan, add_step
         if cancel_event and cancel_event.is_set():
             break
 
-        # Build system reminders
-        reminders = []
+        # Build system-level context (prepended as role:system, not user)
+        system_context = []
 
-        # Inject file changes if watcher detected any
+        # File changes
         if watcher:
             file_changes = watcher.format_changes()
             if file_changes:
-                reminders.append(f"Files changed since last turn:\n{file_changes}")
+                system_context.append({"role": "system", "content": f"<file-changes>\n{file_changes}\n</file-changes>"})
 
-        # Inject background process status
+        # Background process status
         from utils.process_tracker import format_status as process_status
         proc_info = process_status()
         if proc_info:
-            reminders.append(proc_info)
+            system_context.append({"role": "system", "content": f"<process-status>\n{proc_info}\n</process-status>"})
 
-        # Inject conversation summary from sliding window
+        # Conversation summary from sliding window
         conversation_summary = load_summary(project_dir)
         if conversation_summary:
-            reminders.append(f"<conversation-summary>\n{conversation_summary}\n</conversation-summary>")
+            system_context.append({"role": "system", "content": f"<conversation-summary>\n{conversation_summary}\n</conversation-summary>"})
 
+        # Plan reminder (full contextual, as system)
+        plan_msg = []
         plan_data = redis_state.get_plan(project_dir)
         if plan_data:
             plan = json.loads(plan_data)
             contextual_reminder = get_contextual_plan_reminder(plan)
-            reminders.append(f"{contextual_reminder}\n\nUse 'update_step' after each research/work session.")
+            plan_msg = [{"role": "system", "content": f"<system-reminder>{contextual_reminder}\n\nUse 'update_step' after each research/work session.</system-reminder>"}]
 
-        # Inject reminder into messages for this call (only if we have any)
-        if reminders:
-            reminder_msg = {
-                "role": "user",
-                "content": f"<system-reminder>\n" + "\n\n".join(reminders) + "\n</system-reminder>"
-            }
-            trimmed_loop_msgs = token_cutter(msgs + [reminder_msg], tokenizer, max_tokens)
-        else:
-            trimmed_loop_msgs = token_cutter(msgs, tokenizer, max_tokens)
+        # Assemble: system context + plan prepended, then conversation
+        trimmed_loop_msgs = token_cutter(msgs, tokenizer, max_tokens)
+        trimmed_loop_msgs = system_context + plan_msg + trimmed_loop_msgs
 
         try:
             if end_resp == "LiteLLM":
@@ -369,6 +365,14 @@ make_plan, update_step, show_full_plan, add_step
                         )
 
                     msgs.append({"role": "user", "content": tool_result_blocks})
+
+                    # Post-tool nudge (lightweight user reminder, not full context)
+                    plan_data_post = redis_state.get_plan(project_dir)
+                    if plan_data_post:
+                        post_reminder = get_post_tool_plan_reminder(plan_data_post, local_tool_blocks[0].name)
+                        msgs.append({"role": "user", "content": f"<system-reminder>{post_reminder}</system-reminder>"})
+                    else:
+                        msgs.append({"role": "user", "content": "<system-reminder>You just used a tool. Note what you found, then continue working silently — no narration needed.</system-reminder>"})
 
                     # Checkpoint after each tool round
                     store_msgs(project_dir, msgs)

@@ -158,7 +158,7 @@ async def start_():
     _paste_store = {}
     _paste_id = [0]
     _orig_insert = session.default_buffer.insert_text
-    _PASTE_THRESH = 2000
+    _PASTE_THRESH = 200
     _PASTE_RE = re.compile(r'⟪paste:(\d+)\|\d+ chars, \d+ lines⟫')
 
     def _condensed_insert(data, overwrite=False, move_cursor=True, fire_event=True):
