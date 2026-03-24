@@ -3,14 +3,15 @@ import json
 
 def token_cutter(messages: list[dict], tokenizer, max_tokens: int) -> list[dict]:
     """
-    Simple context window management: pop oldest user-assistant pairs
-    until we fit in budget. No tool_use/tool_result unwrapping needed -
-    we pop whole messages so pairs stay intact naturally.
+    Simple context window management: pop oldest messages from front
+    until we fit in budget. Preserves tool_use/tool_result pairing -
+    if popping leaves an orphaned tool_result at the front, keep popping.
 
     Rules:
     1. System message (index 0) always kept
     2. Most recent user message always kept (Claude loses track otherwise)
-    3. Pop oldest non-system pairs from front until under budget
+    3. Pop oldest non-system messages from front until under budget
+    4. Never leave a tool_result without its preceding tool_use
     """
     if not messages:
         return messages
@@ -41,6 +42,13 @@ def token_cutter(messages: list[dict], tokenizer, max_tokens: int) -> list[dict]
             last_user_idx = i
             break
 
+    def has_tool_result(msg):
+        """Check if message contains tool_result content blocks."""
+        content = msg.get("content")
+        if isinstance(content, list):
+            return any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+        return False
+
     # Pop from front of conversation until under budget
     # Always keep at least the last user message
     system_tokens = sum(count_tokens(m) for m in system_msgs)
@@ -51,12 +59,12 @@ def token_cutter(messages: list[dict], tokenizer, max_tokens: int) -> list[dict]
         if conv_tokens <= budget:
             break
 
-        # Don't pop the last user message
-        if len(conversation) <= 1:
-            break
-
         # Pop oldest message
         conversation.pop(0)
+
+        # Keep popping if front is now an orphaned tool_result
+        while len(conversation) > 1 and has_tool_result(conversation[0]):
+            conversation.pop(0)
 
     # Prepend truncation notice if we trimmed anything
     original_conv_len = len(messages) - len(system_msgs)
