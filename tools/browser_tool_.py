@@ -4,6 +4,13 @@ import time
 _playwright = None
 _browser = None
 _page = None
+_console_log: list[str] = []
+
+
+def _on_console(msg):
+    level = msg.type  # log, warning, error, info, debug
+    text = msg.text
+    _console_log.append(f"[{level}] {text}")
 
 
 async def _ensure_browser():
@@ -13,6 +20,7 @@ async def _ensure_browser():
         _playwright = await async_playwright().start()
         _browser = await _playwright.chromium.launch(headless=False)
         _page = await _browser.new_page(viewport={"width": 1280, "height": 720})
+        _page.on("console", _on_console)
     return _page
 
 
@@ -84,9 +92,15 @@ async def browser(code: str, *, project_dir: str, end_resp: str = "Anthropic") -
         end_resp=end_resp,
     )
 
+    # Drain console log
+    console_lines = _console_log.copy()
+    _console_log.clear()
+
     parts = []
     if exec_output:
         parts.append(f"Output: {exec_output}")
+    if console_lines:
+        parts.append(f"Console ({len(console_lines)} messages):\n" + "\n".join(console_lines[-50:]))
     parts.append(f"Screenshot: {screenshot_path}")
     if element_index:
         parts.append(f"Interactive elements:\n{element_index}")
