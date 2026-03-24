@@ -381,8 +381,8 @@ make_plan, update_step, show_full_plan, add_step
             if not tool_use_blocks and text_block:
                 msgs.append({"role": "assistant", "content": text_block.text})
                 store_msgs(project_dir, msgs)
-                # Sliding window: summarize excess into separate summary.json
-                await summarize_and_trim(project_dir, msgs, end_resp)
+                # Sliding window: summarize in background — don't block user prompt
+                asyncio.create_task(summarize_and_trim(project_dir, msgs, end_resp))
                 yield {"type": "final_text"}
                 break
 

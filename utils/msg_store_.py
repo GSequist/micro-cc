@@ -7,7 +7,7 @@ from utils.helpers import tokenizer
 
 
 MAX_MSGS_BEFORE_SUMMARY = 10
-MAX_SUMMARY_INPUT_TOKENS = 30000
+MAX_SUMMARY_INPUT_TOKENS = 10000
 
 
 def _get_storage_dir(project_dir: str) -> Path:
@@ -223,14 +223,14 @@ async def _call_haiku_summary(prev_summary: str, messages_text: str, endpoint: s
             resp = await l_model_call(
                 input=prompt,
                 model="bedrock.anthropic.claude-haiku-4-5",
-                max_tokens=2048,
+                max_tokens=2000,
             )
         else:
             from models.anthropic import a_model_call
             resp = await a_model_call(
                 input=prompt,
                 model="claude-4.5-haiku",
-                max_tokens=2048,
+                max_tokens=2000,
             )
 
         if resp and resp.content:
