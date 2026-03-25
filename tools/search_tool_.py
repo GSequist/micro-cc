@@ -8,7 +8,7 @@ from tools.browser_tool_ import browser
 from tools.computer_tool_ import computer
 from tools.web_tools_ import (
     visit_url,
-    web_search,
+    google_search,
     archive_search,
     page_up,
     page_down,
@@ -69,7 +69,7 @@ _register(
     "visit any url to receive back its content in markdown",
 )
 _register(
-    web_search,
+    google_search,
     "web search google internet query find information online browse",
 )
 _register(
