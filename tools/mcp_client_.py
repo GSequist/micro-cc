@@ -120,7 +120,6 @@ async def resolve_mcp_for_litellm(mcp_catalog_entries: list[dict]) -> tuple[list
             tools, routing = await fetch_mcp_tools(url, name)
             all_tools.extend(tools)
             all_routing.update(routing)
-            print(f"[mcp_client] Fetched {len(tools)} tools from {name}")
         except Exception as e:
             print(f"[mcp_client] Failed to connect to {name}: {e}")
 

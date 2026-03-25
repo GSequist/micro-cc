@@ -247,10 +247,61 @@ make_plan, update_step, show_full_plan, add_step
             # thinking + text already streamed as deltas above
 
             if tool_use_blocks:
+                # Auto-re-resolve tools that expired from Redis but exist in catalogs
+                for tb in tool_use_blocks:
+                    if tb.name not in tools and tb.name not in mcp_routing:
+                        if tb.name in TOOL_CATALOG:
+                            # Re-inject from catalog + refresh Redis
+                            tool_schemas.append(get_tool_schema(tb.name))
+                            tools[tb.name] = get_tool_func(tb.name)
+                            redis_state.add_discovered_tools(project_dir, [tb.name])
+                        elif tb.name in MCP_CATALOG:
+                            # Re-inject MCP + refresh Redis
+                            redis_state.add_discovered_mcps(project_dir, [tb.name])
+                            if end_resp == "LiteLLM":
+                                new_oai_tools, new_routing = await resolve_mcp_for_litellm([MCP_CATALOG[tb.name]])
+                                mcp_openai_tools.extend(new_oai_tools)
+                                mcp_routing.update(new_routing)
+                            else:
+                                mcp_servers.append(get_mcp_server(tb.name))
+                                tool_schemas.append(get_mcp_toolset(tb.name))
+
                 # Split into: local tools, client-side MCP tools, truly unknown
                 local_tool_blocks = [tb for tb in tool_use_blocks if tb.name in tools]
                 mcp_tool_blocks = [tb for tb in tool_use_blocks if tb.name in mcp_routing]
-                
+                unknown_blocks = [tb for tb in tool_use_blocks
+                                  if tb.name not in tools and tb.name not in mcp_routing]
+
+                # Hallucinated tool names — must send error tool_result or API hangs
+                if unknown_blocks:
+                    content_blocks = []
+                    if thinking_block:
+                        content_blocks.append({
+                            "type": "thinking",
+                            "thinking": thinking_block.thinking,
+                            "signature": thinking_block.signature,
+                        })
+                    for tb in unknown_blocks:
+                        content_blocks.append({
+                            "type": "tool_use",
+                            "id": tb.id,
+                            "name": tb.name,
+                            "input": tb.input,
+                        })
+                    msgs.append({"role": "assistant", "content": content_blocks})
+                    msgs.append({"role": "user", "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tb.id,
+                            "content": f"Error: tool '{tb.name}' does not exist. Use search_tools to discover available tools.",
+                            "is_error": True,
+                        }
+                        for tb in unknown_blocks
+                    ]})
+                    store_msgs(project_dir, msgs)
+                    if not local_tool_blocks and not mcp_tool_blocks:
+                        continue  # No valid tools this round, re-enter loop
+
                 for tool_use_block in local_tool_blocks:
                     yield {
                         "type": "tool_call",
