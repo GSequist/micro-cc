@@ -45,12 +45,10 @@ class Response:
 # Format converters
 # ---------------------------------------------------------------------------
 
-def _tools_to_openai(anthropic_tools):
-    """Anthropic tool schemas -> OpenAI function-calling format."""
+def _tools_to_openai(anthropic_tools, mcp_openai_tools=None):
+    """Anthropic tool schemas + MCP tools -> OpenAI function-calling format."""
     out = []
     for t in anthropic_tools:
-        if t.get("type") == "mcp_toolset":
-            continue  # MCP not supported through proxy
         out.append({
             "type": "function",
             "function": {
@@ -59,6 +57,8 @@ def _tools_to_openai(anthropic_tools):
                 "parameters": t.get("input_schema", {}),
             },
         })
+    if mcp_openai_tools:
+        out.extend(mcp_openai_tools)
     return out or None
 
 
@@ -273,7 +273,7 @@ async def l_model_call(
     model="bedrock.anthropic.claude-opus-4-6",
     encoded_image: Optional[Union[str, List[str]]] = None,
     tools: Optional[List[Dict[str, Any]]] = None,
-    mcp_servers: list = None,  # ignored — no MCP through proxy
+    mcp_openai_tools: list = None,
     stream: bool = False,
     thinking=False,
     max_tokens: int = 120000,
@@ -325,7 +325,7 @@ async def l_model_call(
         api_params["reasoning_effort"] = "high"
 
     if tools:
-        openai_tools = _tools_to_openai(tools)
+        openai_tools = _tools_to_openai(tools, mcp_openai_tools=mcp_openai_tools)
         if openai_tools:
             api_params["tools"] = openai_tools
             api_params["tool_choice"] = "auto"

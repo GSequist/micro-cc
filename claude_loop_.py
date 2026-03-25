@@ -22,7 +22,9 @@ from tools.search_tool_ import (
     get_tool_func,
     get_mcp_server,
     get_mcp_toolset,
+    MCP_CATALOG,
 )
+from tools.mcp_client_ import resolve_mcp_for_litellm, call_mcp_tool
 from utils.msg_store_ import store_msgs, load_msgs, load_summary, summarize_and_trim
 from utils.tokenization_simple import token_cutter
 from utils.helpers import tokenizer
@@ -79,11 +81,22 @@ async def claude_loop(
             tool_schemas.append(get_tool_schema(tool_name))
             tools[tool_name] = get_tool_func(tool_name)
 
-    ###############discovered mcps - add toolsets to tools array!
+    ###############discovered mcps
     discovered_mcp = redis_state.get_discovered_mcps(project_dir)
-    mcp_servers = [get_mcp_server(name) for name in discovered_mcp]
-    mcp_toolsets = [get_mcp_toolset(name) for name in discovered_mcp]
-    tool_schemas.extend(mcp_toolsets)  # MCP toolsets go in tools array!
+    mcp_servers = []       # Anthropic server-side: server configs for API param
+    mcp_openai_tools = []  # LiteLLM client-side: pre-fetched OpenAI-format tool defs
+    mcp_routing = {}       # LiteLLM client-side: {tool_name: server_url}
+
+    if discovered_mcp:
+        if end_resp == "LiteLLM":
+            # Client-side: we ARE the MCP client — fetch tools, convert to OpenAI format
+            mcp_entries = [MCP_CATALOG[name] for name in discovered_mcp if name in MCP_CATALOG]
+            if mcp_entries:
+                mcp_openai_tools, mcp_routing = await resolve_mcp_for_litellm(mcp_entries)
+        else:
+            # Anthropic server-side: just pass configs, API handles everything
+            mcp_servers = [get_mcp_server(name) for name in discovered_mcp]
+            tool_schemas.extend([get_mcp_toolset(name) for name in discovered_mcp])
 
     yield {"type": "status", "message": ""}
 
@@ -185,6 +198,7 @@ make_plan, update_step, show_full_plan, add_step
                     input=trimmed_loop_msgs,
                     model="bedrock.anthropic.claude-opus-4-6",
                     tools=tool_schemas,
+                    mcp_openai_tools=mcp_openai_tools or None,
                     thinking=True,
                     stream=True,
                 )
@@ -233,41 +247,10 @@ make_plan, update_step, show_full_plan, add_step
             # thinking + text already streamed as deltas above
 
             if tool_use_blocks:
-                # Filter out MCP tool calls - they execute internally in API
+                # Split into: local tools, client-side MCP tools, truly unknown
                 local_tool_blocks = [tb for tb in tool_use_blocks if tb.name in tools]
-                unknown_blocks = [tb for tb in tool_use_blocks if tb.name not in tools]
-
-                # LiteLLM/OpenAI can hallucinate tool names not in schema
-                # Must respond with error tool_result or loop hangs forever
-                if unknown_blocks:
-                    content_blocks = []
-                    if thinking_block:
-                        content_blocks.append({
-                            "type": "thinking",
-                            "thinking": thinking_block.thinking,
-                            "signature": thinking_block.signature,
-                        })
-                    for tb in unknown_blocks:
-                        content_blocks.append({
-                            "type": "tool_use",
-                            "id": tb.id,
-                            "name": tb.name,
-                            "input": tb.input,
-                        })
-                    msgs.append({"role": "assistant", "content": content_blocks})
-                    msgs.append({"role": "user", "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tb.id,
-                            "content": f"Error: tool '{tb.name}' not found. Use search_tools to discover it first.",
-                            "is_error": True,
-                        }
-                        for tb in unknown_blocks
-                    ]})
-                    store_msgs(project_dir, msgs)
-                    if not local_tool_blocks:
-                        continue  # Re-enter loop, model will self-correct
-
+                mcp_tool_blocks = [tb for tb in tool_use_blocks if tb.name in mcp_routing]
+                
                 for tool_use_block in local_tool_blocks:
                     yield {
                         "type": "tool_call",
@@ -296,6 +279,7 @@ make_plan, update_step, show_full_plan, add_step
                 if cancel_event and cancel_event.is_set():
                     break
 
+                # Execute local tools
                 tool_tasks = [
                     execute_tool_call(
                         tool_block,
@@ -305,10 +289,16 @@ make_plan, update_step, show_full_plan, add_step
                     )
                     for tool_block in local_tool_blocks
                 ]
-                tool_results = await asyncio.gather(*tool_tasks)
+                # Execute MCP tools (client-side, for LiteLLM)
+                mcp_tasks = [
+                    call_mcp_tool(mcp_routing[tb.name], tb.name, tb.input)
+                    for tb in mcp_tool_blocks
+                ]
 
-                # Only append local tool calls to messages (not MCP)
-                if local_tool_blocks:
+                all_blocks = local_tool_blocks + mcp_tool_blocks
+                all_results = await asyncio.gather(*tool_tasks, *mcp_tasks)
+
+                if all_blocks:
                     content_blocks = []
                     if thinking_block:
                         content_blocks.append(
@@ -318,7 +308,7 @@ make_plan, update_step, show_full_plan, add_step
                                 "signature": thinking_block.signature,
                             }
                         )
-                    for tb in local_tool_blocks:
+                    for tb in all_blocks:
                         content_blocks.append(
                             {
                                 "type": "tool_use",
@@ -330,7 +320,7 @@ make_plan, update_step, show_full_plan, add_step
                     msgs.append({"role": "assistant", "content": content_blocks})
 
                     tool_result_blocks = []
-                    for tool_block, result in zip(local_tool_blocks, tool_results):
+                    for tool_block, result in zip(all_blocks, all_results):
                         # Handle search_tools discovery - inject into live loop
                         if tool_block.name == "search_tools" and isinstance(result, dict):
                             new_tools = result.get("discovered_tools", [])
@@ -343,9 +333,14 @@ make_plan, update_step, show_full_plan, add_step
                                     tool_schemas.append(get_tool_schema(t_name))
                                     tools[t_name] = get_tool_func(t_name)
                             for m_name in new_mcps:
-                                if m_name not in [s.get("mcp_server_name") for s in tool_schemas if isinstance(s, dict) and s.get("type") == "mcp_toolset"]:
-                                    mcp_servers.append(get_mcp_server(m_name))
-                                    tool_schemas.append(get_mcp_toolset(m_name))
+                                if m_name in MCP_CATALOG and m_name not in [s.get("name") for s in mcp_servers]:
+                                    if end_resp == "LiteLLM":
+                                        new_oai_tools, new_routing = await resolve_mcp_for_litellm([MCP_CATALOG[m_name]])
+                                        mcp_openai_tools.extend(new_oai_tools)
+                                        mcp_routing.update(new_routing)
+                                    else:
+                                        mcp_servers.append(get_mcp_server(m_name))
+                                        tool_schemas.append(get_mcp_toolset(m_name))
 
                         yield {
                             "type": "tool_result",
@@ -369,7 +364,7 @@ make_plan, update_step, show_full_plan, add_step
                     # Post-tool nudge (lightweight user reminder, not full context)
                     plan_data_post = redis_state.get_plan(project_dir)
                     if plan_data_post:
-                        post_reminder = get_post_tool_plan_reminder(plan_data_post, local_tool_blocks[0].name)
+                        post_reminder = get_post_tool_plan_reminder(plan_data_post, all_blocks[0].name)
                         msgs.append({"role": "user", "content": f"<system-reminder>{post_reminder}</system-reminder>"})
                     else:
                         msgs.append({"role": "user", "content": "<system-reminder>You just used a tool. Note what you found, then continue working silently — no narration needed.</system-reminder>"})

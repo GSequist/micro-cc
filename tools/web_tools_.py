@@ -7,7 +7,7 @@ load_dotenv()
 browser_manager = BrowserManager()
 
 
-def web_search(query: str, filter_year: int = None, *, project_dir) -> str:
+def google_search(query: str, filter_year: int = None, *, project_dir) -> str:
     """Search the web for information.
 
     Args:
