@@ -24,6 +24,7 @@ lxml==6.0.2
 mammoth==1.11.0
 markdown-it-py==4.0.0
 markdownify==1.2.2
+mcp==1.26.0
 mdurl==0.1.2
 numpy==2.4.1
 openai==2.16.0
