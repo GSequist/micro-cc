@@ -23,6 +23,7 @@ from tools.search_tool_ import (
     get_mcp_server,
     get_mcp_toolset,
     MCP_CATALOG,
+    TOOL_CATALOG,
 )
 from tools.mcp_client_ import resolve_mcp_for_litellm, call_mcp_tool
 from utils.msg_store_ import store_msgs, load_msgs, load_summary, summarize_and_trim
