@@ -11,6 +11,7 @@ from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.live import Live
+from rich.markup import escape
 from utils.file_watcher_ import FileWatcher
 
 
@@ -96,7 +97,7 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
                 else:
                     # Read-only tools — compact one-liner
                     short = output.replace("\n", " ").strip()[:120]
-                    console.print(f"  ✓ [dim]{name}[/dim] {short}")
+                    console.print(f"  ✓ [dim]{name}[/dim] {escape(short)}")
 
             elif etype == "final_text":
                 pass  # signal only — text already rendered via deltas
