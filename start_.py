@@ -232,36 +232,33 @@ async def start_():
             if role == "system":
                 continue
 
-            try:
-                if role == "user":
-                    if isinstance(content, str) and not content.startswith(
-                        "<system-reminder>"
-                    ):
-                        console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                        console.print(Markdown(f"\n› {content.strip()}\n"))
-                        console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                    elif isinstance(content, list):
-                        # tool_result blocks — show compact
-                        for block in content:
-                            if (
-                                isinstance(block, dict)
-                                and block.get("type") == "tool_result"
-                            ):
-                                out = str(block.get("content", ""))[:200]
-                                console.print(f"  ✓ {escape(out)}...")
+            if role == "user":
+                if isinstance(content, str) and not content.startswith(
+                    "<system-reminder>"
+                ):
+                    console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    console.print(Markdown(f"\n› {content.strip()}\n"))
+                    console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                elif isinstance(content, list):
+                    # tool_result blocks — show compact
+                    for block in content:
+                        if (
+                            isinstance(block, dict)
+                            and block.get("type") == "tool_result"
+                        ):
+                            out = str(block.get("content", ""))[:200]
+                            console.print(f"  ✓ {escape(out)}...")
 
-                elif role == "assistant":
-                    if isinstance(content, str):
-                        console.print(Markdown(f"\n{content}\n"))
-                    elif isinstance(content, list):
-                        for block in content:
-                            if isinstance(block, dict):
-                                if block.get("type") == "text":
-                                    console.print(Markdown(f"\n{block['text']}\n"))
-                                elif block.get("type") == "tool_use":
-                                    console.print(Markdown(f"  🔧 `{block['name']}`"))
-            except Exception:
-                console.print(f"  [dim]⚠ skipped message (render error)[/dim]")
+            elif role == "assistant":
+                if isinstance(content, str):
+                    console.print(Markdown(f"\n{content}\n"))
+                elif isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict):
+                            if block.get("type") == "text":
+                                console.print(Markdown(f"\n{block['text']}\n"))
+                            elif block.get("type") == "tool_use":
+                                console.print(Markdown(f"  🔧 `{block['name']}`"))
 
         console.print("  ╰─── end history · /clear to reset ───\n")
 
