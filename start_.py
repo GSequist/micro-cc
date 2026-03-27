@@ -223,16 +223,6 @@ async def start_():
     from utils.msg_store_ import load_msgs
 
     existing_msgs = load_msgs(project_dir)
-    _ANSI_RE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
-    _HISTORY_CAP = 2000  # max chars per block before truncation
-
-    def _safe_md(text, cap=_HISTORY_CAP):
-        """Sanitize text for Rich Markdown: strip ANSI, cap length."""
-        text = _ANSI_RE.sub('', text)
-        if len(text) > cap:
-            text = text[:cap] + "\n\n…truncated…"
-        return Markdown(text)
-
     if existing_msgs:
         console.print("  ╭─── conversation history ───")
         for msg in existing_msgs:
@@ -248,7 +238,7 @@ async def start_():
                         "<system-reminder>"
                     ):
                         console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                        console.print(_safe_md(f"\n› {content.strip()}\n"))
+                        console.print(Markdown(f"\n› {content.strip()}\n"))
                         console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                     elif isinstance(content, list):
                         # tool_result blocks — show compact
@@ -257,17 +247,17 @@ async def start_():
                                 isinstance(block, dict)
                                 and block.get("type") == "tool_result"
                             ):
-                                out = _ANSI_RE.sub('', str(block.get("content", "")))[:200]
+                                out = str(block.get("content", ""))[:200]
                                 console.print(f"  ✓ {escape(out)}...")
 
                 elif role == "assistant":
                     if isinstance(content, str):
-                        console.print(_safe_md(f"\n{content}\n"))
+                        console.print(Markdown(f"\n{content}\n"))
                     elif isinstance(content, list):
                         for block in content:
                             if isinstance(block, dict):
                                 if block.get("type") == "text":
-                                    console.print(_safe_md(f"\n{block['text']}\n"))
+                                    console.print(Markdown(f"\n{block['text']}\n"))
                                 elif block.get("type") == "tool_use":
                                     console.print(Markdown(f"  🔧 `{block['name']}`"))
             except Exception:
