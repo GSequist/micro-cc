@@ -3,15 +3,17 @@ import json
 
 def token_cutter(messages: list[dict], tokenizer, max_tokens: int) -> list[dict]:
     """
-    Simple context window management: pop oldest messages from front
-    until we fit in budget. Preserves tool_use/tool_result pairing -
-    if popping leaves an orphaned tool_result at the front, keep popping.
+    Context window management via atomic chunk dropping.
+
+    Groups tool cycles (assistant tool_use + tool_result + optional reminder)
+    as indivisible units. Drops oldest chunks first. Always preserves the
+    last real user message so the model never loses track of the query.
 
     Rules:
-    1. System message (index 0) always kept
-    2. Most recent user message always kept (Claude loses track otherwise)
-    3. Pop oldest non-system messages from front until under budget
-    4. Never leave a tool_result without its preceding tool_use
+    1. System messages always kept
+    2. Last real user message (not tool_result/system-reminder) always kept
+    3. Tool cycles dropped as atomic units — no orphaned tool_use/tool_result
+    4. Oldest chunks dropped first until under budget
     """
     if not messages:
         return messages
@@ -35,43 +37,107 @@ def token_cutter(messages: list[dict], tokenizer, max_tokens: int) -> list[dict]
         else:
             conversation.append(msg)
 
-    # Find the last user message index (must always keep it)
-    last_user_idx = None
-    for i in range(len(conversation) - 1, -1, -1):
-        if conversation[i].get("role") == "user":
-            last_user_idx = i
-            break
+    if not conversation:
+        return messages
 
-    def has_tool_result(msg):
-        """Check if message contains tool_result content blocks."""
-        content = msg.get("content")
-        if isinstance(content, list):
-            return any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
-        return False
-
-    # Pop from front of conversation until under budget
-    # Always keep at least the last user message
     system_tokens = sum(count_tokens(m) for m in system_msgs)
     budget = max_tokens - system_tokens
 
-    while len(conversation) > 1:
-        conv_tokens = sum(count_tokens(m) for m in conversation)
-        if conv_tokens <= budget:
+    # --- Identify the last real user message (must always keep) ---
+    def is_real_user_msg(msg):
+        if msg.get("role") != "user":
+            return False
+        content = msg.get("content")
+        # tool_result blocks → not a real user query
+        if isinstance(content, list):
+            return not any(
+                isinstance(b, dict) and b.get("type") == "tool_result"
+                for b in content
+            )
+        # system-reminder injections → not a real user query
+        if isinstance(content, str) and content.strip().startswith("<system-reminder>"):
+            return False
+        return True
+
+    last_real_user_idx = None
+    for i in range(len(conversation) - 1, -1, -1):
+        if is_real_user_msg(conversation[i]):
+            last_real_user_idx = i
             break
 
-        # Pop oldest message
-        conversation.pop(0)
+    # --- Group into atomic chunks ---
+    # A tool cycle = assistant(tool_use) + user(tool_result) + optional user(system-reminder)
+    # Everything else is a single-message chunk
+    chunks = []  # each chunk is a list of conversation indices
+    i = 0
+    while i < len(conversation):
+        msg = conversation[i]
+        content = msg.get("content")
 
-        # Keep popping if front is now an orphaned tool_result
-        while len(conversation) > 1 and has_tool_result(conversation[0]):
-            conversation.pop(0)
+        # Detect assistant with tool_use blocks
+        has_tool_use = (
+            msg.get("role") == "assistant"
+            and isinstance(content, list)
+            and any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)
+        )
 
-    # Prepend truncation notice if we trimmed anything
-    original_conv_len = len(messages) - len(system_msgs)
-    if len(conversation) < original_conv_len:
-        conversation.insert(0, {
+        if has_tool_use:
+            chunk = [i]
+            j = i + 1
+            # Grab following tool_result
+            if j < len(conversation):
+                nc = conversation[j].get("content")
+                if isinstance(nc, list) and any(
+                    isinstance(b, dict) and b.get("type") == "tool_result"
+                    for b in nc
+                ):
+                    chunk.append(j)
+                    j += 1
+            # Grab following system-reminder (plan nudge)
+            if j < len(conversation):
+                nc = conversation[j].get("content", "")
+                if (
+                    conversation[j].get("role") == "user"
+                    and isinstance(nc, str)
+                    and nc.strip().startswith("<system-reminder>")
+                ):
+                    chunk.append(j)
+                    j += 1
+            chunks.append(chunk)
+            i = j
+        else:
+            chunks.append([i])
+            i += 1
+
+    # --- Find which chunk is protected (contains last real user msg) ---
+    protected_chunk_idx = None
+    if last_real_user_idx is not None:
+        for ci, chunk in enumerate(chunks):
+            if last_real_user_idx in chunk:
+                protected_chunk_idx = ci
+                break
+
+    # --- Drop oldest chunks first, skip protected ---
+    conv_tokens = sum(count_tokens(m) for m in conversation)
+    dropped = set()
+
+    for ci, chunk in enumerate(chunks):
+        if conv_tokens <= budget:
+            break
+        if ci == protected_chunk_idx:
+            continue
+        chunk_tokens = sum(count_tokens(conversation[idx]) for idx in chunk)
+        conv_tokens -= chunk_tokens
+        dropped.update(chunk)
+
+    # Build trimmed conversation
+    trimmed = [conversation[i] for i in range(len(conversation)) if i not in dropped]
+
+    # Prepend truncation notice if we dropped anything
+    if dropped and trimmed:
+        trimmed.insert(0, {
             "role": "user",
             "content": "[Earlier conversation history has been truncated.]"
         })
 
-    return system_msgs + conversation
+    return system_msgs + trimmed
