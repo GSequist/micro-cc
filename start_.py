@@ -223,6 +223,14 @@ async def start_():
     from utils.msg_store_ import load_msgs
 
     existing_msgs = load_msgs(project_dir)
+
+    async def _safe_print_md(text):
+        try:
+            md = await asyncio.wait_for(asyncio.to_thread(Markdown, text), timeout=1.0)
+            console.print(md)
+        except (asyncio.TimeoutError, Exception):
+            console.print(f"  [dim]{escape(text.strip()[:300])}[/dim]")
+
     if existing_msgs:
         console.print("  ╭─── conversation history ───")
         for msg in existing_msgs:
@@ -237,7 +245,7 @@ async def start_():
                     "<system-reminder>"
                 ):
                     console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                    console.print(Markdown(f"\n› {content.strip()}\n"))
+                    await _safe_print_md(f"\n› {content.strip()}\n")
                     console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                 elif isinstance(content, list):
                     # tool_result blocks — show compact
@@ -251,12 +259,12 @@ async def start_():
 
             elif role == "assistant":
                 if isinstance(content, str):
-                    console.print(Markdown(f"\n{content}\n"))
+                    await _safe_print_md(f"\n{content}\n")
                 elif isinstance(content, list):
                     for block in content:
                         if isinstance(block, dict):
                             if block.get("type") == "text":
-                                console.print(Markdown(f"\n{block['text']}\n"))
+                                await _safe_print_md(f"\n{block['text']}\n")
                             elif block.get("type") == "tool_use":
                                 console.print(Markdown(f"  🔧 `{block['name']}`"))
 
