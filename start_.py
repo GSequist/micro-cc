@@ -247,7 +247,7 @@ async def start_():
                             and block.get("type") == "tool_result"
                         ):
                             out = str(block.get("content", ""))[:200]
-                            console.print(f"  ✓ {out}...")
+                            console.print(f"  ✓ {escape(out)}...")
 
             elif role == "assistant":
                 if isinstance(content, str):
