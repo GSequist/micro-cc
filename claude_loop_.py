@@ -360,6 +360,13 @@ make_plan, update_step, show_full_plan, add_step
                                 "signature": thinking_block.signature,
                             }
                         )
+                    if text_block:
+                        content_blocks.append(
+                            {
+                                "type": "text",
+                                "text": text_block.text,
+                            }
+                        )
                     for tb in all_blocks:
                         content_blocks.append(
                             {
