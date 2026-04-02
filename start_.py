@@ -47,7 +47,32 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
                 inp = event.get("input", {})
                 approval = event.get("approval", None)
 
-                console.print(f"\n ⚠️  {name}: {inp}")
+                console.print(f"\n  ⚠️  [bold yellow]{name}[/bold yellow]")
+                if name == "bash_tool" and isinstance(inp, dict):
+                    cmd = inp.get("command", str(inp))
+                    console.print(Markdown(f"```bash\n{cmd}\n```"))
+                elif name in ("write_", "edit_") and isinstance(inp, dict):
+                    fp = inp.get("file_path", "")
+                    # For edit_, find the line number of old_string in the actual file
+                    line_info = ""
+                    if name == "edit_" and "old_string" in inp:
+                        try:
+                            _abs = fp if os.path.isabs(fp) else os.path.join(project_dir, fp)
+                            with open(_abs, "r", encoding="utf-8") as _f:
+                                _src = _f.read()
+                            _pos = _src.find(inp["old_string"])
+                            if _pos != -1:
+                                _line = _src[:_pos].count("\n") + 1
+                                _end = _line + inp["old_string"].count("\n")
+                                line_info = f" [dim]L{_line}–{_end}[/dim]" if _end > _line else f" [dim]L{_line}[/dim]"
+                        except Exception:
+                            pass
+                    console.print(f"  [dim]file:[/dim] {fp}{line_info}")
+                    for k in ("content", "old_string", "new_string"):
+                        if k in inp:
+                            console.print(Markdown(f"**{k}:**\n```\n{inp[k]}\n```"))
+                else:
+                    console.print(Markdown(f"```\n{inp}\n```"))
 
                 approval_session = PromptSession()
                 response = (
@@ -117,18 +142,21 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
 
 
 def print_banner(console):
-    console.print("""
-  [bold white]███╗   ███╗██╗ ██████╗██████╗  ██████╗[/]
-  [bold white]████╗ ████║██║██╔════╝██╔══██╗██╔═══██╗[/]
-  [bold white]██╔████╔██║██║██║     ██████╔╝██║   ██║[/]
-  [dim]██║╚██╔╝██║██║██║     ██╔══██╗██║   ██║[/]
-  [dim]██║ ╚═╝ ██║██║╚██████╗██║  ██║╚██████╔╝[/]
-  [dim]╚═╝     ╚═╝╚═╝ ╚═════╝╚═╝  ╚═╝ ╚═════╝[/]
-  [dim]─────────[/] [bold]cc[/] [dim]──────────────────────────[/]
+    console.print(
+    """
+[bold white]███╗   ███╗ ██████╗ ██████╗ ███████╗██╗[/]
+[bold white]████╗ ████║██╔═══██╗██╔══██╗██╔════╝██║[/]
+[bold white]██╔████╔██║██║   ██║██║  ██║█████╗  ██║[/]
+[dim]██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██║[/]
+[dim]██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗[/]
+[dim]╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝[/]
+[dim]───────[/] [bold]on the metal[/] [dim]─────────────────────[/]
+[dim]frontier models · full sys access · planning · memory[/]
 
-  [dim]⌥↩  submit   /clear  reset   ctrl+c  interrupt[/]
-  [dim]↩   newline  /exit   quit    /plan   plan[/]
-""")
+[dim]⌥↩  submit   /clear  reset   ctrl+c  interrupt[/]
+[dim]↩   newline  /exit   quit    /plan   plan[/]
+"""
+)
 
 
 async def start_():

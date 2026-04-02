@@ -1,28 +1,16 @@
-# micro-cc
+# MODEL
 
 ```
-        ┌─────────────────────────────────────────────────────────────┐
-        │                                                             │
-        │    ███╗   ███╗ ██╗  ██████╗ ██████╗   ██████╗               │
-        │    ████╗ ████║ ██║ ██╔════╝ ██╔══██╗ ██╔═══██╗              │
-        │    ██╔████╔██║ ██║ ██║      ██████╔╝ ██║   ██║              │
-        │    ██║╚██╔╝██║ ██║ ██║      ██╔══██╗ ██║   ██║              │
-        │    ██║ ╚═╝ ██║ ██║ ╚██████╗ ██║  ██║ ╚██████╔╝              │
-        │    ╚═╝     ╚═╝ ╚═╝  ╚═════╝ ╚═╝  ╚═╝  ╚═════╝               │
-        │                                                             │
-        │              ██████╗  ██████╗                               │
-        │             ██╔════╝ ██╔════╝                               │
-        │    ─────────██║      ██║       ─────────────────────────    │
-        │             ██║      ██║                                    │
-        │             ╚██████╗ ╚██████╗                               │
-        │              ╚═════╝  ╚═════╝                               │
-        │                                                             │
-        │    minimal local claude code-like app                       │
-        │                                                             │
-        └─────────────────────────────────────────────────────────────┘
+  ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗
+  ████╗ ████║██╔═══██╗██╔══██╗██╔════╝██║
+  ██╔████╔██║██║   ██║██║  ██║█████╗  ██║
+  ██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██║
+  ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗
+  ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝
+  ─────── on the metal ─────────────────────
 ```
 
-Minimal Claude Code-like local application. Point it at any project directory and work.
+Harness that gives frontier models full system access — shell, filesystem, browser, MCP — running directly on the metal. Planning, memory, and tool orchestration let models perform complex multi-step work autonomously. Point it at any project directory and go.
 
 ## Install
 
