@@ -19,6 +19,7 @@ from tools.web_tools_ import (
 )
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
+from utils.helpers import get_endpoint
 import os
 
 load_dotenv()
@@ -35,11 +36,11 @@ _EMBED_MODELS = {
     "Anthropic": "text-embedding-3-small",
 }
 
-def _get_embed_client(end_resp: str) -> AsyncOpenAI:
-    return _litellm_client if end_resp == "LiteLLM" else _openai_client
+def _get_embed_client() -> AsyncOpenAI:
+    return _litellm_client if get_endpoint() == "LiteLLM" else _openai_client
 
-def _get_embed_model(end_resp: str) -> str:
-    return _EMBED_MODELS.get(end_resp, "text-embedding-3-small")
+def _get_embed_model() -> str:
+    return _EMBED_MODELS.get(get_endpoint(), "text-embedding-3-small")
 
 # tool_name -> {func, schema, search_text, embedding (lazily computed)}
 TOOL_CATALOG = {}
@@ -125,13 +126,13 @@ MCP_CATALOG = {  # Now works for both Anthropic (server-side) and LiteLLM (clien
 }
 
 
-async def _ensure_embeddings(end_resp: str = "Anthropic"):
+async def _ensure_embeddings():
     """Lazily compute tool embeddings on first search"""
     global _embeddings_computed
     if _embeddings_computed:
         return
 
-    client = _get_embed_client(end_resp)
+    client = _get_embed_client()
 
     # Batch embed all search texts (tools + MCPs)
     tool_names = list(TOOL_CATALOG.keys())
@@ -145,7 +146,7 @@ async def _ensure_embeddings(end_resp: str = "Anthropic"):
         return
 
     response = await client.embeddings.create(
-        input=search_texts, model=_get_embed_model(end_resp)
+        input=search_texts, model=_get_embed_model()
     )
 
     # Store embeddings back - tools first, then MCPs
@@ -163,7 +164,6 @@ async def search_tools(
     query: str,
     *,
     project_dir: str = "",
-    end_resp: str = "Anthropic",
 ):
     """Search for tools by describing what you need to accomplish.
 
@@ -171,14 +171,14 @@ async def search_tools(
         query: Natural language description of the capability you need.
             Examples: "search clinical trials", "analyze image", "run Python code"
     """
-    client = _get_embed_client(end_resp)
+    client = _get_embed_client()
 
     # Ensure tool embeddings are computed (only once)
-    await _ensure_embeddings(end_resp)
+    await _ensure_embeddings()
 
     # Embed the query
     query_resp = await client.embeddings.create(
-        input=query, model=_get_embed_model(end_resp)
+        input=query, model=_get_embed_model()
     )
     query_emb = np.array(query_resp.data[0].embedding)
 

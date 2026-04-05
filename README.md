@@ -1,4 +1,4 @@
-# MODEL
+# micro·cc — cognitive compute
 
 ```
   ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗
@@ -15,19 +15,22 @@ Harness that gives frontier models full system access — shell, filesystem, bro
 ## Install
 
 ```bash
-git clone https://github.com/GSequist/micro-cc.git
-cd micro-cc
-python -m venv env
-source env/bin/activate
-pip install -r requirements.txt
+pip install micro-cc
 ```
 
 ## Environment
 
-Create `.env` in the micro-cc directory:
+Create `~/.micro-cc/.env` with **one** endpoint — set Anthropic OR LiteLLM, not both. If both are set, Anthropic takes priority.
 
 ```
+# Anthropic (direct)
 ANTHROPIC_API_KEY=sk-ant-
+
+# OR LiteLLM (proxy to Bedrock, Azure, etc.)
+LITELLM_BASE_URL=https://your-proxy.com
+LITELLM_API_KEY=sk-...
+
+# Shared
 OPENAI_API_KEY=sk-proj-
 SERPAPI_KEY=
 ```
@@ -35,8 +38,7 @@ SERPAPI_KEY=
 ## Usage
 
 ```bash
-source env/bin/activate
-python start_.py /path/to/your/project
+microcc /path/to/your/project
 ```
 
 **Controls:**
@@ -88,7 +90,7 @@ micro-cc/projects/{name}_{hash}/  conversation persistence
 2. User query → `claude_loop()` async generator
 3. Builds system prompt with project's `CLAUDE.md` + any file changes detected
 4. Calls Anthropic API with tool definitions
-5. Executes tool calls locally, loops until Claude stops calling tools
+5. Executes tool calls locally, loops until the model stops calling tools
 6. Yields events (`thinking`, `tool_call`, `tool_result`, `final_text`) for CLI to render
 7. Saves conversation to JSONL (stripped of thinking blocks for replay)
 
@@ -104,4 +106,4 @@ micro-cc/projects/{name}_{hash}/  conversation persistence
 
 **Path handling:** Relative paths resolve to `project_dir`, absolute paths work anywhere.
 
-**File watcher:** Detects external changes, injects into system prompt so Claude sees what you edited.
+**File watcher:** Detects external changes, injects into system prompt so the model sees what you edited.

@@ -27,13 +27,7 @@ import os
 import re
 
 
-# Module-level endpoint routing (set once at startup via set_endpoint)
-_model_endpoint = "Anthropic"
-
-
-def set_endpoint(endpoint: str):
-    global _model_endpoint
-    _model_endpoint = endpoint
+from utils.helpers import get_endpoint
 
 
 class _CustomMarkdownify(markdownify.MarkdownConverter):
@@ -641,7 +635,7 @@ class ImageConverter(MediaConverter):
             image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
             data_uri = f"data:{content_type};base64,{image_base64}"
 
-        if _model_endpoint == "LiteLLM":
+        if get_endpoint() == "LiteLLM":
             response = asyncio.run(l_model_call(input=prompt, encoded_image=data_uri))
         else:
             response = asyncio.run(a_model_call(input=prompt, encoded_image=data_uri))

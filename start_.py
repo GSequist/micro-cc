@@ -12,21 +12,28 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.live import Live
 from rich.markup import escape
+from rich.status import Status
 from utils.file_watcher_ import FileWatcher
 
 
-async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatcher, cancel_event: asyncio.Event = None):
+async def consumeloop(query, project_dir, console, watcher: FileWatcher):
     _stream_text = ""
     _live = None
     _thinking_started = False
+    _spinner = Status("  ⋯ thinking", console=console, spinner="dots")
+    _spinner.start()
+    _spinning = True
 
     try:
         async for event in claude_loop(
-            query=query, project_dir=project_dir, end_resp=end_resp, watcher=watcher, cancel_event=cancel_event
+            query=query, project_dir=project_dir, watcher=watcher,
         ):
-            if cancel_event and cancel_event.is_set():
-                break
             etype = event.get("type")
+
+            # Stop spinner when real content arrives
+            if _spinning and etype in ("thinking_delta", "text_delta", "tool_call", "approval_request", "final_text", "done", "error", "cancelled", "interrupted"):
+                _spinner.stop()
+                _spinning = False
 
             # Stop live display when transitioning away from text deltas
             if _live and etype != "text_delta":
@@ -90,6 +97,9 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
             elif etype == "cancelled":
                 console.print("  ⊘ cancelled · conversation saved")
 
+            elif etype == "interrupted":
+                console.print("\n  ⊘ interrupted · conversation saved")
+
             elif etype == "thinking_delta":
                 if not _thinking_started:
                     print("  💭 ", end="", flush=True)
@@ -113,16 +123,14 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
             elif etype == "tool_result":
                 name = event.get("name", "?")
                 output = event.get("output", "")
-                # Dangerous/mutating tools — show full output with markdown
-                if name in ("bash_tool", "write_", "edit_"):
-                    console.print(f"  ✓ [bold]{name}[/bold]")
-                    if output.strip():
-                        console.print(Markdown(f"```\n{output[:3000]}\n```"))
-                    console.print("  ─────────────────────────────────────")
-                else:
-                    # Read-only tools — compact one-liner
-                    short = output.replace("\n", " ").strip()[:120]
-                    console.print(f"  ✓ [dim]{name}[/dim] {escape(short)}")
+                short = output.replace("\n", " ").strip()[:60]
+                if len(output.strip()) > 60:
+                    short += "…"
+                console.print(f"  ✓ [dim]{name}[/dim] {escape(short)}")
+                # Restart spinner — model goes back to API
+                _spinner = Status("  ⋯ thinking", console=console, spinner="dots")
+                _spinner.start()
+                _spinning = True
 
             elif etype == "final_text":
                 pass  # signal only — text already rendered via deltas
@@ -133,7 +141,11 @@ async def consumeloop(query, project_dir, end_resp, console, watcher: FileWatche
             elif etype == "done":
                 pass
     finally:
-        # Always clean up Live display — left active it hijacks the terminal
+        # Always clean up Live display and spinner
+        try:
+            _spinner.stop()
+        except Exception:
+            pass
         if _live:
             try:
                 _live.stop()
@@ -221,25 +233,10 @@ async def start_():
     else:
         project_dir = os.getcwd()
 
-    # Get model choice
-
-    endpoint = PromptSession()
-    endp_resp = (
-        (await endpoint.prompt_async("  Endpoint (LiteLLM (l) | Anthropic (a)): "))
-        .strip()
-        .lower()
-    )
-
-    if endp_resp in ("", "a"):
-        endp_resp = "Anthropic"
-    else:
-        endp_resp = "LiteLLM"
-    console.print(f"  ⚡ {endp_resp}")
-
-    # Set endpoint for browser/md_convert (module-level, avoids threading through class hierarchy)
-    from browser._md_convert import set_endpoint
-
-    set_endpoint(endp_resp)
+    # Infer endpoint from env vars
+    from utils.helpers import get_endpoint
+    endp_display = get_endpoint()
+    console.print(f"  ⚡ {endp_display}")
 
     if not project_dir:
         console.print("  ✗ project directory required")
@@ -338,22 +335,24 @@ async def start_():
                 _paste_id[0] = 0
                 console.clear()
                 print_banner(console)
-                console.print(f"  ⚡ {endp_resp}")
+                console.print(f"  ⚡ {endp_display}")
                 console.print(f"  📂 {project_dir}\n")
                 continue
 
             console.print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+            # Clear stop signal before each query
+            _state_mgr.clear_stop_signal(project_dir)
+
             # Run as a task so SIGINT can cleanly cancel it
-            cancel_event = asyncio.Event()
             task = asyncio.create_task(
-                consumeloop(query, project_dir, endp_resp, console, watcher, cancel_event)
+                consumeloop(query, project_dir, console, watcher)
             )
 
             loop = asyncio.get_running_loop()
 
             def _handle_sigint():
-                cancel_event.set()
+                _state_mgr.set_stop_signal(project_dir)
                 task.cancel()
 
             loop.add_signal_handler(signal.SIGINT, _handle_sigint)
@@ -378,8 +377,13 @@ async def start_():
     _state_mgr.stop_cleanup_task()
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point for `microcc` CLI command (via pip install)."""
     try:
         asyncio.run(start_())
     except KeyboardInterrupt:
         pass  # already handled inside
+
+
+if __name__ == "__main__":
+    main()

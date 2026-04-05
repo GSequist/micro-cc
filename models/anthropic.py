@@ -6,6 +6,8 @@ import asyncio
 import json
 
 
+import os
+load_dotenv(os.path.expanduser("~/.micro-cc/.env"))
 load_dotenv()
 
 
@@ -83,15 +85,15 @@ async def a_model_call(
     client = AsyncAnthropic(timeout=client_timeout)
     base_sleep = 2
 
-    if model == "opus-4.6":
-        model = "claude-opus-4-6"
-    elif model == "claude-4.6":
-        model = "claude-sonnet-4-6"
-    elif model == "claude-4.5-haiku":
-        model = "claude-haiku-4-5-20251001"
-    else:
-        # Fallback for stale DB values (e.g. old "opus-4.5")
-        model = "claude-sonnet-4-6"
+    MODEL_MAP = {
+        "opus-4.6": "claude-opus-4-6",
+        "sonnet-4.6": "claude-sonnet-4-6",
+        "haiku-4.5": "claude-haiku-4-5-20251001",
+        # legacy aliases
+        "claude-4.6": "claude-sonnet-4-6",
+        "claude-4.5-haiku": "claude-haiku-4-5-20251001",
+    }
+    model = MODEL_MAP.get(model, "claude-sonnet-4-6")
 
     system_prompts = []
     messages = []

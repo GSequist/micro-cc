@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 
+load_dotenv(os.path.expanduser("~/.micro-cc/.env"))
 load_dotenv()
 
 
@@ -270,7 +271,7 @@ async def _wrap_stream(openai_stream):
 
 async def l_model_call(
     input: Union[List[Dict[str, Any]], str],
-    model="bedrock.anthropic.claude-opus-4-6",
+    model="bedrock.anthropic.claude-sonnet-4-6",
     encoded_image: Optional[Union[str, List[str]]] = None,
     tools: Optional[List[Dict[str, Any]]] = None,
     mcp_openai_tools: list = None,
@@ -289,6 +290,16 @@ async def l_model_call(
         timeout=client_timeout,
     )
     base_sleep = 2
+
+    MODEL_MAP = {
+        "opus-4.6": "bedrock.anthropic.claude-opus-4-6",
+        "sonnet-4.6": "bedrock.anthropic.claude-sonnet-4-6",
+        "haiku-4.5": "bedrock.anthropic.claude-haiku-4-5",
+        # legacy aliases
+        "claude-4.6": "bedrock.anthropic.claude-sonnet-4-6",
+        "claude-4.5-haiku": "bedrock.anthropic.claude-haiku-4-5",
+    }
+    model = MODEL_MAP.get(model, "bedrock.anthropic.claude-sonnet-4-6")
 
     # ---- Build messages ----
     messages = []

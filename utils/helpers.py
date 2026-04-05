@@ -1,9 +1,22 @@
+from dotenv import load_dotenv
 from PIL import Image
 import tiktoken
 import base64
 import json
 import os
 import io
+
+load_dotenv(os.path.expanduser("~/.micro-cc/.env"))
+load_dotenv()
+
+
+def get_endpoint() -> str:
+    """Infer endpoint from env vars. Both set → Anthropic wins."""
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "Anthropic"
+    if os.getenv("LITELLM_BASE_URL") and os.getenv("LITELLM_API_KEY"):
+        return "LiteLLM"
+    return "Anthropic"
 
 ############################################################################################################
 ##tokenizer

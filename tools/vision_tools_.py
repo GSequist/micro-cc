@@ -1,9 +1,9 @@
-from utils.helpers import sanitize_and_encode_image_
+from utils.helpers import sanitize_and_encode_image_, get_endpoint
 from models.anthropic import a_model_call
 from models.litellm import l_model_call
 
 
-async def vision(img_path: str, query: str, *, project_dir, end_resp="Anthropic") -> str:
+async def vision(img_path: str, query: str, *, project_dir) -> str:
     """Analyze images to extract visual information or answer questions.
 
     Handles photographs, diagrams, charts, screenshots, and images with text.
@@ -14,7 +14,7 @@ async def vision(img_path: str, query: str, *, project_dir, end_resp="Anthropic"
     """
     try:
         encoded_string = sanitize_and_encode_image_(img_path)
-        if end_resp == "LiteLLM":
+        if get_endpoint() == "LiteLLM":
             resp = await l_model_call(input=query, encoded_image=encoded_string)
         else:
             resp = await a_model_call(input=query, encoded_image=encoded_string)

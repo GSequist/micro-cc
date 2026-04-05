@@ -9,7 +9,7 @@ import pyautogui
 pyautogui.PAUSE = 0.3
 
 
-async def computer(code: str, *, project_dir: str, end_resp: str = "Anthropic") -> str:
+async def computer(code: str, *, project_dir: str) -> str:
     """Execute PyAutoGUI code to control the Mac desktop.
 
     `pyautogui` and `time` are pre-imported. Use for mouse, keyboard, and screen control.
@@ -65,7 +65,6 @@ async def computer(code: str, *, project_dir: str, end_resp: str = "Anthropic") 
         screenshot_path,
         prompt,
         project_dir=project_dir,
-        end_resp=end_resp,
     )
 
     parts = []

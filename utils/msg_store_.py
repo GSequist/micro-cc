@@ -23,9 +23,8 @@ def _get_storage_dir(project_dir: str) -> Path:
     folder_name = os.path.basename(normalized) or "root"
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in folder_name)
 
-    # Store inside micro-cc/projects/ (visible in project tree)
-    micro_cc_root = Path(__file__).resolve().parent.parent
-    storage_dir = micro_cc_root / "projects" / f"{safe_name}_{path_hash}"
+    # Store in ~/.micro-cc/projects/ (works for both source and pip installs)
+    storage_dir = Path.home() / ".micro-cc" / "projects" / f"{safe_name}_{path_hash}"
     storage_dir.mkdir(parents=True, exist_ok=True)
 
     # Store project path mapping for debugging
@@ -201,7 +200,7 @@ def _extract_excess_text(msgs: list) -> str:
     return "\n".join(parts)
 
 
-async def _call_haiku_summary(prev_summary: str, messages_text: str, endpoint: str) -> str:
+async def _call_haiku_summary(prev_summary: str, messages_text: str) -> str:
     """Call Haiku to produce/enrich conversation summary."""
     prompt = (
         "You are a precise summarization assistant. Progressively summarize "
@@ -218,7 +217,8 @@ async def _call_haiku_summary(prev_summary: str, messages_text: str, endpoint: s
     prompt += f"New messages:\n{messages_text}\n\nNew summary:"
 
     try:
-        if endpoint == "LiteLLM":
+        from utils.helpers import get_endpoint
+        if get_endpoint() == "LiteLLM":
             from models.litellm import l_model_call
             resp = await l_model_call(
                 input=prompt,
@@ -247,7 +247,7 @@ async def _call_haiku_summary(prev_summary: str, messages_text: str, endpoint: s
     return prev_summary or ""
 
 
-async def summarize_and_trim(project_dir: str, msgs: list, endpoint: str) -> None:
+async def summarize_and_trim(project_dir: str, msgs: list) -> None:
     """Sliding window: summarize excess messages into summary.json. Does NOT touch msgs."""
     # Skip system messages
     non_system = [m for m in msgs if m.get("role") != "system"]
@@ -264,5 +264,5 @@ async def summarize_and_trim(project_dir: str, msgs: list, endpoint: str) -> Non
         return
 
     prev_summary = load_summary(project_dir)
-    new_summary = await _call_haiku_summary(prev_summary, messages_text, endpoint)
+    new_summary = await _call_haiku_summary(prev_summary, messages_text)
     _store_summary(project_dir, new_summary)

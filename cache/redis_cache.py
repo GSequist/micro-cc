@@ -151,6 +151,23 @@ class RedisStateManager:
         except Exception as e:
             print(f"State error in clear_discovered_mcps: {e}")
 
+    ########################## stop signal
+
+    def set_stop_signal(self, project_dir: str) -> None:
+        """Set stop signal — checked by loop, tools, stream."""
+        key = self._make_key("stop", project_dir)
+        self._set_with_ttl(key, True, 30)  # auto-expires 30s
+
+    def check_stop_signal(self, project_dir: str) -> bool:
+        """Check if stop was requested."""
+        key = self._make_key("stop", project_dir)
+        return bool(self._get(key))
+
+    def clear_stop_signal(self, project_dir: str) -> None:
+        """Clear stop signal (call before each new query)."""
+        key = self._make_key("stop", project_dir)
+        self._delete(key)
+
     ########################## streaming state
 
     def set_streaming_state(self, project_dir: str, active: bool) -> None:

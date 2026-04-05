@@ -33,7 +33,7 @@ async def close_browser():
     _playwright = _browser = _page = None
 
 
-async def browser(code: str, *, project_dir: str, end_resp: str = "Anthropic") -> str:
+async def browser(code: str, *, project_dir: str) -> str:
     """Execute Playwright Python code against a persistent browser session.
 
     A browser with a single page is lazily initialized on first call and persists
@@ -89,7 +89,6 @@ async def browser(code: str, *, project_dir: str, end_resp: str = "Anthropic") -
         screenshot_path,
         prompt,
         project_dir=project_dir,
-        end_resp=end_resp,
     )
 
     # Drain console log

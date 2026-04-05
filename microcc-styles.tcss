@@ -1,0 +1,34 @@
+#bottom-bar {
+    dock: bottom;
+    height: auto;
+    max-height: 12;
+}
+#statusbar {
+    height: 1;
+    background: $surface;
+    color: $text-muted;
+}
+PromptInput {
+    height: auto;
+    min-height: 3;
+    max-height: 8;
+    border-top: dashed #444444;
+    border-bottom: dashed #444444;
+    border-left: none;
+    border-right: none;
+}
+#loader {
+    height: 1;
+    display: none;
+}
+#model-picker {
+    display: none;
+    height: auto;
+    max-height: 6;
+    border: solid $accent;
+}
+MessageList {
+    scrollbar-size-vertical: 1;
+    scrollbar-color: $text-muted 30%;
+    scrollbar-background: $surface;
+}

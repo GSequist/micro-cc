@@ -6,7 +6,6 @@ async def execute_tool_call(
     tool_call,  # Anthropic SDK ToolUseBlock object
     tools: Dict[str, callable],
     project_dir: str,
-    end_resp: str = "Anthropic",
 ):
     """Execute a tool call from Anthropic SDK response.
 
@@ -14,7 +13,6 @@ async def execute_tool_call(
         tool_call: ToolUseBlock with .name, .input, .id attributes
         tools: Dict mapping tool names to callables
         project_dir: Working directory for tools that need it
-        end_resp: Model endpoint choice ("Anthropic" or "LiteLLM")
 
     Returns:
         Tool result (str or dict)
@@ -31,8 +29,6 @@ async def execute_tool_call(
         sig = inspect.signature(tool)
         if "project_dir" in sig.parameters:
             args = {**args, "project_dir": project_dir}
-        if "end_resp" in sig.parameters:
-            args = {**args, "end_resp": end_resp}
 
         # Execute tool (sync or async)
         if inspect.iscoroutinefunction(tool):

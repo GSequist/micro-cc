@@ -101,7 +101,7 @@ def sse(chunk: dict) -> str:
     return f"data: {json.dumps(chunk)}\n\n"
 
 
-async def sse_claude_loop(query, project_dir, end_resp, watcher, resume=False):
+async def sse_claude_loop(query, project_dir, watcher, resume=False):
     """Async generator: consumes claude_loop events, yields Vercel AI SDK v5 SSE lines.
 
     When resume=True, picks up a paused generator from pending[] instead of
@@ -127,7 +127,6 @@ async def sse_claude_loop(query, project_dir, end_resp, watcher, resume=False):
         gen = claude_loop(
             query=query,
             project_dir=project_dir,
-            end_resp=end_resp,
             watcher=watcher,
         )
         in_thinking = False
@@ -378,7 +377,6 @@ async def sse_claude_loop(query, project_dir, end_resp, watcher, resume=False):
 async def chat(request: Request):
     data = await request.json()
     project_dir = data.get("project_dir", "")
-    endpoint = data.get("endpoint", "LiteLLM")
     messages = data.get("messages", [])
 
     # ── Resume pending approval (SDK re-submits here after addToolApprovalResponse) ──
@@ -390,7 +388,6 @@ async def chat(request: Request):
             sse_claude_loop(
                 query="",
                 project_dir=project_dir,
-                end_resp=endpoint,
                 watcher=watchers.get(project_dir),
                 resume=True,
             ),
@@ -440,7 +437,6 @@ async def chat(request: Request):
         sse_claude_loop(
             query=latest_message,
             project_dir=project_dir,
-            end_resp=endpoint,
             watcher=watcher,
         ),
         media_type="text/event-stream",

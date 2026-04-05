@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "micro-cc"
+version = "0.1.0"
+description = "Harness that gives frontier models full system access — shell, filesystem, browser, MCP — running directly on the metal."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{name = "George Salapa"}]
+
+dependencies = [
+    "anthropic>=0.76.0",
+    "anyio>=4.0",
+    "beautifulsoup4>=4.14",
+    "httpx>=0.28",
+    "httpx-sse>=0.4",
+    "lxml>=6.0",
+    "mammoth>=1.11",
+    "markdown-it-py>=4.0",
+    "markdownify>=1.2",
+    "mcp>=1.26",
+    "numpy>=2.4",
+    "openai>=2.16",
+    "openpyxl>=3.1",
+    "pandas>=3.0",
+    "pdfminer.six>=20260107",
+    "pillow>=12.0",
+    "playwright>=1.58",
+    "prompt_toolkit>=3.0",
+    "pydantic>=2.12",
+    "pydantic-settings>=2.13",
+    "python-dotenv>=1.2",
+    "python-pptx>=1.0",
+    "requests>=2.32",
+    "rich>=14.0",
+    "tiktoken>=0.12",
+    "watchdog>=6.0",
+    "xlsxwriter>=3.2",
+]
+
+[project.scripts]
+microcc = "start_live_:start_"
+
+[tool.setuptools]
+py-modules = ["start_live_", "claude_loop_", "execute_tool", "web_"]
+packages = ["tools", "utils", "cache", "models", "browser", "skills", "screens"]
+
+[tool.setuptools.package-data]
+skills = ["**/*.md", "**/scripts/*", "**/canvas-fonts/*"]
+"*" = ["*.tcss"]

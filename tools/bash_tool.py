@@ -1,8 +1,8 @@
-import subprocess
+import asyncio
 import os
 
 
-def bash_(
+async def bash_(
     command: str,
     *,
     project_dir: str,
@@ -31,26 +31,41 @@ def bash_(
         return f"[Directory not found: {cwd}]"
 
     try:
-        result = subprocess.run(
-            ["/bin/bash", "-c", command],
+        proc = await asyncio.create_subprocess_exec(
+            "/bin/bash", "-c", command,
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env={**os.environ, "TERM": "dumb"}
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "TERM": "dumb"},
         )
 
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return f"[Command timed out after {timeout}s]"
+        except asyncio.CancelledError:
+            proc.kill()
+            await proc.wait()
+            raise  # re-raise so gather/task cancellation propagates
+
+        stdout = stdout_bytes.decode("utf-8", errors="replace")
+        stderr = stderr_bytes.decode("utf-8", errors="replace")
+
         # Build output
-        if result.returncode != 0:
-            output = f"[Exit code: {result.returncode}]\n"
-            if result.stderr:
-                output += f"STDERR:\n{result.stderr}\n"
-            if result.stdout:
-                output += f"STDOUT:\n{result.stdout}"
+        if proc.returncode != 0:
+            output = f"[Exit code: {proc.returncode}]\n"
+            if stderr:
+                output += f"STDERR:\n{stderr}\n"
+            if stdout:
+                output += f"STDOUT:\n{stdout}"
         else:
-            output = result.stdout
-            if result.stderr:
-                output += f"\n[STDERR]: {result.stderr}"
+            output = stdout
+            if stderr:
+                output += f"\n[STDERR]: {stderr}"
 
         # Truncate if too long (keep head + tail)
         if len(output) > max_output_chars:
@@ -63,8 +78,7 @@ def bash_(
 
         return output.strip() or "[No output]"
 
-    except subprocess.TimeoutExpired:
-        return f"[Command timed out after {timeout}s]"
-
+    except asyncio.CancelledError:
+        raise  # always propagate
     except Exception as e:
         return f"[Bash error: {type(e).__name__}: {e}]"

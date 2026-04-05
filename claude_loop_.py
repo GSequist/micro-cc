@@ -30,8 +30,10 @@ from utils.msg_store_ import store_msgs, load_msgs, load_summary, summarize_and_
 from utils.tokenization_simple import token_cutter
 from utils.helpers import tokenizer
 from utils.claude_md_loader import load_claude_md_file
+from utils.helpers import get_endpoint
 
 
+load_dotenv(os.path.expanduser("~/.micro-cc/.env"))
 load_dotenv()
 
 DANGEROUS_TOOLS = {"bash_", "edit_", "write_"}
@@ -41,14 +43,17 @@ async def claude_loop(
     query,
     *,
     project_dir,
-    end_resp,
     watcher=None,
-    cancel_event=None
+    model="opus-4.6"
 ):
     """micro cc"""
 
     max_tokens = 80000
+    end_resp = get_endpoint()
     redis_state = RedisStateManager()
+
+    def _stopped():
+        return redis_state.check_stop_signal(project_dir)
 
     msgs = load_msgs(project_dir)
 
@@ -109,7 +114,7 @@ async def claude_loop(
         msgs = [
             {
                 "role": "system",
-                "content": f"""You are micro claude code - a CLI assistant for software engineering.
+                "content": f"""You are micro cognitive compute - a CLI assistant. You have full system access and thus using code you can achieve any task.
 
 ## Environment
 - Project directory: {project_dir}
@@ -124,7 +129,7 @@ async def claude_loop(
 - grep_: Search file contents with regex
 
 ## Discoverable Tools
-Use search_tools to discover: web tools, vision, etc.
+Use search_tools to discover: web tools, vision, browser, computer_use, etc.
 
 ## Planning Tools
 make_plan, update_step, show_full_plan, add_step
@@ -156,9 +161,11 @@ make_plan, update_step, show_full_plan, add_step
     # Checkpoint: persist user message immediately (survives crashes mid-loop)
     store_msgs(project_dir, msgs)
 
+    interrupted = False
+
     while True:
-        # Check cancellation at top of each iteration
-        if cancel_event and cancel_event.is_set():
+        if _stopped():
+            interrupted = True
             break
 
         # Build system-level context (prepended as role:system, not user)
@@ -197,7 +204,7 @@ make_plan, update_step, show_full_plan, add_step
             if end_resp == "LiteLLM":
                 stream = await l_model_call(
                     input=trimmed_loop_msgs,
-                    model="bedrock.anthropic.claude-opus-4-6",
+                    model=model,
                     tools=tool_schemas,
                     mcp_openai_tools=mcp_openai_tools or None,
                     thinking=True,
@@ -206,7 +213,7 @@ make_plan, update_step, show_full_plan, add_step
             else:
                 stream = await a_model_call(
                     input=trimmed_loop_msgs,
-                    model="opus-4.6",
+                    model=model,
                     tools=tool_schemas,
                     mcp_servers=mcp_servers if mcp_servers else None,
                     thinking=True,
@@ -219,7 +226,8 @@ make_plan, update_step, show_full_plan, add_step
 
             response = None
             async for event in stream:
-                if cancel_event and cancel_event.is_set():
+                if _stopped():
+                    interrupted = True
                     break
                 if event["type"] == "text_delta":
                     yield {"type": "text_delta", "content": event["text"]}
@@ -228,7 +236,8 @@ make_plan, update_step, show_full_plan, add_step
                 elif event["type"] == "response":
                     response = event["response"]
 
-            if cancel_event and cancel_event.is_set():
+            if interrupted or _stopped():
+                interrupted = True
                 break
 
             if response is None:
@@ -328,7 +337,8 @@ make_plan, update_step, show_full_plan, add_step
                             }
                             return
 
-                if cancel_event and cancel_event.is_set():
+                if _stopped():
+                    interrupted = True
                     break
 
                 # Execute local tools
@@ -337,7 +347,6 @@ make_plan, update_step, show_full_plan, add_step
                         tool_block,
                         tools,
                         project_dir,
-                        end_resp,
                     )
                     for tool_block in local_tool_blocks
                 ]
@@ -348,7 +357,12 @@ make_plan, update_step, show_full_plan, add_step
                 ]
 
                 all_blocks = local_tool_blocks + mcp_tool_blocks
-                all_results = await asyncio.gather(*tool_tasks, *mcp_tasks)
+
+                try:
+                    all_results = await asyncio.gather(*tool_tasks, *mcp_tasks)
+                except asyncio.CancelledError:
+                    interrupted = True
+                    break
 
                 if all_blocks:
                     content_blocks = []
@@ -436,7 +450,7 @@ make_plan, update_step, show_full_plan, add_step
                 msgs.append({"role": "assistant", "content": text_block.text})
                 store_msgs(project_dir, msgs)
                 # Sliding window: summarize in background — don't block user prompt
-                asyncio.create_task(summarize_and_trim(project_dir, msgs, end_resp))
+                asyncio.create_task(summarize_and_trim(project_dir, msgs))
                 yield {"type": "final_text"}
                 break
 
@@ -446,7 +460,8 @@ make_plan, update_step, show_full_plan, add_step
                 break
 
         except asyncio.CancelledError:
-            break  # Propagate cancellation cleanly
+            interrupted = True
+            break
         except Exception as e:
             yield {
                 "type": "error",
@@ -457,4 +472,6 @@ make_plan, update_step, show_full_plan, add_step
     # Always save messages at end
     store_msgs(project_dir, msgs)
 
+    if interrupted:
+        yield {"type": "interrupted"}
     yield {"type": "done"}
